@@ -93,14 +93,58 @@ head(data)
     ## 6  P43080   6   42173364 42181338
 
 This file can then be used to extract the specified window for each GWAS
-using an array job [`window_array.sh`]() or as an individual file
-[`window_individual.sh`](). Once you have a gene region/window for a
-GWAS you can then perform the finemapping.
+using an array job
+[`window_array.sh`](https://github.com/mattlee821/finemapping/blob/main/src/example/window_array.sh)
+or as an individual file
+[`window_individual.sh`](https://github.com/mattlee821/finemapping/blob/main/src/example/window_individual.sh).
+Once you have a gene region/window for a GWAS you can then perform the
+finemapping.
 
-## Finemapping pipeline
+## Finemapping
 
-The pipeline runs in R and can be run as an array or as an individual
-job.
+The pipeline runs in R and can be run as an array
+([‘finemapping_array.R’](https://github.com/mattlee821/finemapping/blob/main/src/example/finemapping_array.R))
+or as an individual job ([`finemapping_individual.R`]()). Example
+submission scripts are provided for the array
+([‘finemapping_array.sh’](https://github.com/mattlee821/finemapping/blob/main/src/example/finemapping_array.sh))
+and individual job ([`finemapping_individual.R`]()). The array takes a
+file list as input, which is just a list of all of the gene
+region/window files. We can create this in `bash`:
+
+``` bash
+VAR_study="ferkingstad_2021_PMID34857953"
+FILE_IN="/data/GWAS_data/work/${VAR_study}/window/"
+FILE_OUT="data/finemapping/${VAR_study}/"
+mkdir -p "$FILE_OUT"
+find "$FILE_IN" -type f > "${FILE_OUT}files.txt"
+wc -l < "${FILE_OUT}files.txt"
+head "${FILE_OUT}files.txt"
+```
+
+    ## 4876
+    ## /data/GWAS_data/work/ferkingstad_2021_PMID34857953/window/10000_28_CRYBB2_CRBB2_UNIPROT-P43320.txt
+    ## /data/GWAS_data/work/ferkingstad_2021_PMID34857953/window/10001_7_RAF1_c_Raf_UNIPROT-P04049.txt
+    ## /data/GWAS_data/work/ferkingstad_2021_PMID34857953/window/10012_5_SPDEF_SPDEF_UNIPROT-O95238.txt
+    ## /data/GWAS_data/work/ferkingstad_2021_PMID34857953/window/13105_7_SNAP25_SNP25_UNIPROT-P60880.txt
+    ## /data/GWAS_data/work/ferkingstad_2021_PMID34857953/window/10014_31_SNAI2_SLUG_UNIPROT-O43623.txt
+    ## /data/GWAS_data/work/ferkingstad_2021_PMID34857953/window/13107_9_LYPD3_LYPD3_UNIPROT-O95274.txt
+    ## /data/GWAS_data/work/ferkingstad_2021_PMID34857953/window/13112_179_FSTL1_FSTL1_UNIPROT-Q12841.txt
+    ## /data/GWAS_data/work/ferkingstad_2021_PMID34857953/window/13111_79_BCL6_BCL6_UNIPROT-P41182.txt
+    ## /data/GWAS_data/work/ferkingstad_2021_PMID34857953/window/13109_82_NEGR1_NEGR1_UNIPROT-Q7Z3B1.txt
+    ## /data/GWAS_data/work/ferkingstad_2021_PMID34857953/window/10008_43_GUCA1A_GUC1A_UNIPROT-P43080.txt
+
+When running the pipeline you need to manually change the VARS,
+everything else “should” work if everything above has been done… There
+are example finemapping pipelines in `src/`:
+
+- [`ferkingstad_2021_PMID34857953`](https://github.com/mattlee821/finemapping/tree/main/src/ferkingstad_2021_PMID34857953) -
+  array job - somalogic
+- [`pietzner_2021_PMID34648354`](https://github.com/mattlee821/finemapping/tree/main/src/pietzner_2021_PMID34648354) -
+  array job - somalogic
+- [`sun_2023_PMID37794186`](https://github.com/mattlee821/finemapping/tree/main/src/sun_2023_PMID37794186) -
+  array job - olink
+- [`zhang_2022_PMID35501419`](https://github.com/mattlee821/finemapping/tree/main/src/zhang_2022_PMID35501419) -
+  array job - somalogic
 
 ### Set-up
 
@@ -265,12 +309,12 @@ if (!any(list_data$list_df$P < 1E-5, na.rm = TRUE)) {
 }
 ```
 
-This returns a list containing the data (`list_df`), alignemnt plots,
+This returns a list containing the data (`list_df`), alignment plots,
 and the lambda estimated for the adjusted z-scores (i.e., the degree of
 alignment). Again, we perform a check to see if there are any SNPs with
 p\<1E-5. You can see from the below plots that the alignment check was
 run 3 times and that the alignment improved after allele flipping but
-its stil not great. But it is what it is….
+its still not great. But it is what it is….
 
 ``` r
 # plot: alignment ====
@@ -282,13 +326,19 @@ tryCatch({
     ),
     nrow = 2
   )
+  png(filename = paste0(VAR_OUT, "alignment.png"), 
+       width = length(list_data$plots)*200, height = 600, units = "px")
+  print(plot_alignment)
+  dev.off()
 }, error = function(e) {
   message("Error creating alignment plot: ", e$message)
 })
-plot_alignment
 ```
 
-<img src="README_files/figure-gfm/plot-alignment-1.png" style="display: block; margin: auto;" />
+    ## png 
+    ##   2
+
+<img src="data/finemapping/ferkingstad_2021_PMID34857953/2192-63_Q9Y4X3/alignment.png" width="1200" style="display: block; margin: auto;" />
 
 If all of the above is satisfactory we then create a directory to save
 the output of the finemapping steps in:
@@ -528,7 +578,7 @@ tryCatch({
     ## Clumping variants at r2=0.98
     ## Sampling from the posterior...
     ## 
-    ## 12500 iterations done in 4.37 seconds
+    ## 12500 iterations done in 4.51 seconds
 
 ``` r
 finemap_table_finimom_cs
@@ -745,7 +795,7 @@ tryCatch({
     labs(x = "Position (Mb)", y = "-log10(P)") +  
     cowplot::theme_cowplot() +
     scale_x_continuous(labels = scales::comma)
-    tiff(filename = paste0(VAR_OUT, "manhattan.tiff"), 
+  png(filename = paste0(VAR_OUT, "manhattan.png"), 
        width = 600, height = 400, units = "px")
   print(plot_manhattan)
   dev.off()
@@ -757,11 +807,7 @@ tryCatch({
     ## png 
     ##   2
 
-``` r
-plot_manhattan
-```
-
-<img src="README_files/figure-gfm/plot-manhattan-1.png" style="display: block; margin: auto;" />
+<img src="data/finemapping/ferkingstad_2021_PMID34857953/2192-63_Q9Y4X3/manhattan.png" width="600" style="display: block; margin: auto;" />
 
 ``` r
 # plot_finimom ====
@@ -793,8 +839,7 @@ if (exists("finemap_table_finimom") && !is.null(finemap_table_finimom_cs) &&
     guides(colour = guide_legend(title = "Credible set"), size = NULL) +
     cowplot::theme_cowplot() +
     scale_x_continuous(labels = scales::comma)
-  # Save to TIFF
-  tiff(filename = paste0(VAR_OUT, "finemap-finimom.tiff"),
+  png(filename = paste0(VAR_OUT, "finemap-finimom.png"),
        width = 800, height = 400, units = "px")
   print(plot_finimom)
   dev.off()
@@ -806,11 +851,7 @@ if (exists("finemap_table_finimom") && !is.null(finemap_table_finimom_cs) &&
     ## png 
     ##   2
 
-``` r
-plot_finimom
-```
-
-<img src="README_files/figure-gfm/plot-finimom-1.png" style="display: block; margin: auto;" />
+<img src="data/finemapping/ferkingstad_2021_PMID34857953/2192-63_Q9Y4X3/finemap-finimom.png" width="800" style="display: block; margin: auto;" />
 
 ``` r
 # plot_susie ====
@@ -842,8 +883,7 @@ if (exists("finemap_table_susie") && !is.null(finemap_table_susie_cs) &&
     guides(colour = guide_legend(title = "Credible set"), size = NULL) +
     cowplot::theme_cowplot() +
     scale_x_continuous(labels = scales::comma)
-  # Save to TIFF
-  tiff(filename = paste0(VAR_OUT, "finemap-susie.tiff"),
+  png(filename = paste0(VAR_OUT, "finemap-susie.png"),
        width = 800, height = 400, units = "px")
   print(plot_susie)
   dev.off()
@@ -855,11 +895,7 @@ if (exists("finemap_table_susie") && !is.null(finemap_table_susie_cs) &&
     ## png 
     ##   2
 
-``` r
-plot_susie
-```
-
-<img src="README_files/figure-gfm/plot-susie-1.png" style="display: block; margin: auto;" />
+<img src="data/finemapping/ferkingstad_2021_PMID34857953/2192-63_Q9Y4X3/finemap-susie.png" width="800" style="display: block; margin: auto;" />
 
 ``` r
 # plot: regional association ====
@@ -896,7 +932,7 @@ if (exists("finemap") && !is.null(finemap) && nrow(finemap) > 0) {
     label = label,
     labels = FALSE
   )
-    tiff(filename = paste0(VAR_OUT, "region.tiff"), 
+  png(filename = paste0(VAR_OUT, "region.png"), 
        width = 800, height = 800, units = "px")
   print(plot_region)
   dev.off()
@@ -906,11 +942,7 @@ if (exists("finemap") && !is.null(finemap) && nrow(finemap) > 0) {
     ## png 
     ##   2
 
-``` r
-plot_region
-```
-
-<img src="README_files/figure-gfm/plot-region-1.png" style="display: block; margin: auto;" />
+<img src="data/finemapping/ferkingstad_2021_PMID34857953/2192-63_Q9Y4X3/region.png" width="800" style="display: block; margin: auto;" />
 
 ``` r
 # plot: locus ====
@@ -1024,8 +1056,7 @@ if (exists("finemap") && !is.null(finemap) && nrow(finemap) > 0) {
     ncol = 1,
     rel_heights = c(0.05, 1)
   )
-  # Save the plot as a .tiff file
-  tiff(filename = paste0(VAR_OUT, "locus.tiff"), 
+  png(filename = paste0(VAR_OUT, "locus.png"), 
        width = width, height = height+10, units = "px")
   print(plot_locus)
   dev.off()
@@ -1037,8 +1068,4 @@ if (exists("finemap") && !is.null(finemap) && nrow(finemap) > 0) {
     ## png 
     ##   2
 
-``` r
-plot_locus
-```
-
-<img src="README_files/figure-gfm/plot-locus-1.png" style="display: block; margin: auto;" />
+<img src="data/finemapping/ferkingstad_2021_PMID34857953/2192-63_Q9Y4X3/locus.png" width="1000" style="display: block; margin: auto;" />
