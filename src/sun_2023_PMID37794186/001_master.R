@@ -2,24 +2,55 @@ rm(list = ls())
 set.seed(821)
 
 # environment ====
-library(Rfast)
-library(functions)
-library(susieR)
-library(ieugwasr)
-library(genetics.binaRies)
-library(plinkbinr)
-library(coloc)
-library(locuscomparer)
-library(RcppParallel)
-library(locusplotr)
-library(dplyr)
-library(tidyr)
-library(cowplot)
-library(ggplot2)
-library(viridis)
-library(data.table)
-library(TwoSampleMR)
-library(tidyverse)
+if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
+if (!requireNamespace("devtools", quietly = TRUE)) install.packages("devtools")
+
+# CRAN packages
+cran_pkgs <- c(
+  "dplyr",
+  "tidyr",
+  "cowplot",
+  "ggplot2",
+  "viridis",
+  "data.table",
+  "tidyverse",
+  "curl",
+  "Rcpp",
+  "snpsettest"
+)
+
+# GitHub packages (mapping: pkg -> repo)
+github_pkgs <- list(
+  "functions"       = "mattlee821/functions",
+  "Rfast"           = "RfastOfficial/Rfast",
+  "susieR"          = "stephenslab/susieR",
+  "ieugwasr"        = "MRCIEU/ieugwasr",
+  "genetics.binaRies" = "MRCIEU/genetics.binaRies",
+  "TwoSampleMR"     = "MRCIEU/TwoSampleMR",
+  "plinkbinr"       = "explodecomputer/plinkbinr",
+  "coloc"           = "chr1swallace/coloc@main",
+  "locuscomparer"   = "boxiangliu/locuscomparer",
+  "RcppParallel"    = "RcppCore/RcppParallel",
+  "locusplotr"      = "mglev1n/locusplotr"
+)
+
+# Install + load CRAN packages
+for (pkg in cran_pkgs) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    message("Installing CRAN package: ", pkg)
+    install.packages(pkg, dependencies = TRUE)
+  }
+  library(pkg, character.only = TRUE)
+}
+
+# Install + load GitHub packages
+for (pkg in names(github_pkgs)) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    message("Installing GitHub package: ", pkg, " from ", github_pkgs[[pkg]])
+    remotes::install_github(github_pkgs[[pkg]], force = TRUE)
+  }
+  library(pkg, character.only = TRUE)
+}
 
 # VARS ====
 VAR_data <- "olink"
@@ -62,14 +93,14 @@ VAR_map <- if (VAR_data == "somalogic") {
 }
 
 # VAR_id ====
-VAR_id <- tibble(phenotype = unique(data$phenotype)) %>%
+VAR_id <- tibble(phenotype = unique(data$phenotype)) |>
   mutate(
     olinkID = str_extract(phenotype, "OID\\d+"),
-    UNIPROT_ID = str_split(phenotype, "_") %>% sapply(function(x) x[2])
-  ) %>%
+    UNIPROT_ID = str_split(phenotype, "_") |> sapply(function(x) x[2])
+  ) |>
   select(olinkID, UNIPROT_ID)
-VAR_id <- VAR_map %>%
-  dplyr::filter(UNIPROT %in% VAR_id$UNIPROT_ID) %>%
+VAR_id <- VAR_map |>
+  dplyr::filter(UNIPROT %in% VAR_id$UNIPROT_ID) |>
   mutate(olinkID = VAR_id$olinkID)
 
 if (VAR_data == "somalogic") {
@@ -104,63 +135,6 @@ if (!dir.exists(VAR_OUT)) {
   dir.create(VAR_OUT, recursive = TRUE)
 }
 
-# plot: manhattan ====
-tryCatch({
-  plot_manhattan <- data.frame(
-    P = list_data$list_df$P, 
-    log10p = -log10(list_data$list_df$P),
-    POS = list_data$list_df$POS) |>
-    ggplot(aes(x = POS / 1e6, y = log10p)) +
-    geom_point() +
-    geom_hline(yintercept = -log10(5E-8)) +
-    labs(x = "Position (Mb)", y = "-log10(P)") +  
-    cowplot::theme_cowplot() +
-    scale_x_continuous(labels = scales::comma)
-  tiff(filename = paste0(VAR_OUT, "manhattan.tiff"), 
-       width = 600, height = 400, units = "px")
-  print(plot_manhattan)
-  dev.off()
-}, error = function(e) {
-  message("Error creating manhattan plot: ", e$message)
-})
-
-# plot: alignment ====
-tryCatch({
-  plot_alignment <- plot_grid(
-    plotlist = c(
-      list_data$plots[seq(1, length(list_data$plots), by = 2)],  # Odd numbered plots
-      list_data$plots[seq(2, length(list_data$plots), by = 2)]   # Even numbered plots
-    ),
-    nrow = 2
-  )
-  tiff(filename = paste0(VAR_OUT, "alignment.tiff"), 
-       width = length(list_data$plots)*200, height = 600, units = "px")
-  print(plot_alignment)
-  dev.off()
-}, error = function(e) {
-  message("Error creating alignment plot: ", e$message)
-})
-
-# finemap: approximate bayes factor (approximate only if p used) ====
-tryCatch({
-  finemap_colocabf <- list_data$list_df |>
-    purrr::set_names(~ case_when(
-      . == "SNP" ~ "snp",
-      . == "P" ~ "p", 
-      . == "BETA" ~ "beta", 
-      TRUE ~ .
-    )) |>
-    coloc::finemap.abf() |>
-    tidyr::drop_na() |>
-    dplyr::filter(SNP.PP == max(SNP.PP)) |>
-    dplyr::select(snp, SNP.PP) |>
-    dplyr::mutate(test = "coloc.abf") |>
-    dplyr::rename(SNP = snp,
-                  PIP = SNP.PP) 
-}, error = function(e) {
-  message("Error with finemap approximate bayes factor: ", e$message)
-})
-
 # finemap: p-value and LD ====
 tryCatch({
   # Attempt to run the fine-mapping function
@@ -191,6 +165,26 @@ tryCatch({
     message("No SNPs with P < 5E-8.")
     finemap_p_ld <- data.frame(SNP = character(), LD = logical(), test = numeric())
   }
+})
+
+# finemap: approximate bayes factor (approximate only if p used) ====
+tryCatch({
+  finemap_colocabf <- list_data$list_df |>
+    purrr::set_names(~ case_when(
+      . == "SNP" ~ "snp",
+      . == "P" ~ "p", 
+      . == "BETA" ~ "beta", 
+      TRUE ~ .
+    )) |>
+    coloc::finemap.abf() |>
+    tidyr::drop_na() |>
+    dplyr::filter(SNP.PP == max(SNP.PP)) |>
+    dplyr::select(snp, SNP.PP) |>
+    dplyr::mutate(test = "coloc.abf") |>
+    dplyr::rename(SNP = snp,
+                  PIP = SNP.PP) 
+}, error = function(e) {
+  message("Error with finemap approximate bayes factor: ", e$message)
 })
 
 # finemap: finimom ====
@@ -335,13 +329,50 @@ tryCatch({
   message("Error creating finemap table: ", e$message)
 })
 
+# plot: manhattan ====
+tryCatch({
+  plot_manhattan <- data.frame(
+    P = list_data$list_df$P, 
+    log10p = -log10(list_data$list_df$P),
+    POS = list_data$list_df$POS) |>
+    ggplot(aes(x = POS / 1e6, y = log10p)) +
+    geom_point() +
+    geom_hline(yintercept = -log10(5E-8)) +
+    labs(x = "Position (Mb)", y = "-log10(P)") +  
+    cowplot::theme_cowplot() +
+    scale_x_continuous(labels = scales::comma)
+  tiff(filename = paste0(VAR_OUT, "manhattan.tiff"), 
+       width = 600, height = 400, units = "px")
+  print(plot_manhattan)
+  dev.off()
+}, error = function(e) {
+  message("Error creating manhattan plot: ", e$message)
+})
+
+# plot: alignment ====
+tryCatch({
+  plot_alignment <- plot_grid(
+    plotlist = c(
+      list_data$plots[seq(1, length(list_data$plots), by = 2)],  # Odd numbered plots
+      list_data$plots[seq(2, length(list_data$plots), by = 2)]   # Even numbered plots
+    ),
+    nrow = 2
+  )
+  tiff(filename = paste0(VAR_OUT, "alignment.tiff"), 
+       width = length(list_data$plots)*200, height = 600, units = "px")
+  print(plot_alignment)
+  dev.off()
+}, error = function(e) {
+  message("Error creating alignment plot: ", e$message)
+})
+
 # plot_finimom ====
 if (exists("finemap_table_finimom") && !is.null(finemap_table_finimom_cs) &&
     nrow(finemap_table_finimom_cs) > 0) {
   
   # Separate data
-  df_no_cs <- finemap_table_finimom %>% filter(is.na(cs))
-  df_cs    <- finemap_table_finimom %>% filter(!is.na(cs))
+  df_no_cs <- finemap_table_finimom |> filter(is.na(cs))
+  df_cs    <- finemap_table_finimom |> filter(!is.na(cs))
   
   # Generate the plot
   plot_finimom <- ggplot() +
@@ -379,8 +410,8 @@ if (exists("finemap_table_susie") && !is.null(finemap_table_susie_cs) &&
     nrow(finemap_table_susie_cs) > 0) {
   
   # Separate data
-  df_no_cs <- finemap_table_susie %>% filter(is.na(cs))
-  df_cs    <- finemap_table_susie %>% filter(!is.na(cs))
+  df_no_cs <- finemap_table_susie |> filter(is.na(cs))
+  df_cs    <- finemap_table_susie |> filter(!is.na(cs))
   
   # Generate the plot
   plot_susie <- ggplot() +
