@@ -28,6 +28,11 @@ write_tsv <- function(x, path) {
   )
 }
 
+parse_bool <- function(val, default = TRUE) {
+  if (is.null(val)) return(default)
+  tolower(as.character(val)) %in% c("1", "true", "yes", "y")
+}
+
 options <- parse_options(commandArgs(trailingOnly = TRUE))
 required <- c(
   "variants", "outdir", "methods", "region_id", "region_type"
@@ -51,6 +56,14 @@ variants <- utils::read.delim(
   check.names = FALSE,
   stringsAsFactors = FALSE
 )
+for (bcol in intersect(
+  c("mhc_region", "mhc_core_grc", "PANEL_ALLELE_SWAPPED"),
+  names(variants)
+)) {
+  if (!is.logical(variants[[bcol]])) {
+    variants[[bcol]] <- tolower(as.character(variants[[bcol]])) == "true"
+  }
+}
 if (nrow(variants) == 0L) {
   stop("The region has no LD-matched variants.", call. = FALSE)
 }
@@ -63,8 +76,11 @@ if (any(!methods %in% allowed_methods) || anyDuplicated(methods)) {
 if (!nzchar(options$region_id)) {
   stop("--region-id must not be empty.", call. = FALSE)
 }
-if (!options$region_type %in% c("gene_region", "genome_wide_locus")) {
-  stop("Unsupported --region-type.", call. = FALSE)
+allowed_region_types <- c(
+  "cis_gene", "lead_locus", "mhc", "gene_region", "genome_wide_locus"
+)
+if (!options$region_type %in% allowed_region_types) {
+  stop("Unsupported --region-type: ", options$region_type, call. = FALSE)
 }
 
 matrix_path <- options$matrix
@@ -75,20 +91,21 @@ if (any(methods %in% c("p_ld", "susie_rss", "susie_rrss")) &&
 
 R <- NULL
 if (!is.null(matrix_path)) {
-  matrix_frame <- utils::read.delim(
-    matrix_path,
-    check.names = FALSE,
-    stringsAsFactors = FALSE
-  )
-  ids <- as.character(matrix_frame[[1L]])
-  R <- as.matrix(matrix_frame[-1L])
-  storage.mode(R) <- "double"
-  rownames(R) <- ids
-  colnames(R) <- names(matrix_frame)[-1L]
+  R <- read_ld_matrix(matrix_path, ids_path = options$matrix_ids)
+  if (!"LD_R2_TO_LEAD" %in% names(variants) && nrow(R) == nrow(variants)) {
+    lead_idx <- which.max(
+      ifelse(is.na(variants$LP), -Inf, as.numeric(variants$LP))
+    )
+    if (length(lead_idx) == 1L) {
+      variants$LD_R2_TO_LEAD <- as.numeric(R[, lead_idx]^2)
+    }
+  }
 }
 
 outdir <- options$outdir
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+emit_tsv <- parse_bool(options$write_tsv, default = TRUE)
+
 thresholds <- if (is.null(options$r2_thresholds)) {
   c(0.1, 0.01, 0.001)
 } else {
@@ -99,7 +116,34 @@ reference_sample_size <- if (is.null(options$reference_sample_size)) {
 } else {
   as.numeric(options$reference_sample_size)
 }
+effective_n <- if (is.null(options$effective_n)) {
+  NULL
+} else {
+  as.numeric(options$effective_n)
+}
+max_causal <- if (is.null(options$max_causal)) {
+  10L
+} else {
+  as.integer(options$max_causal)
+}
+max_iter <- if (is.null(options$max_iter)) {
+  200L
+} else {
+  as.integer(options$max_iter)
+}
+min_abs_corr <- if (is.null(options$min_abs_corr)) {
+  0.5
+} else {
+  as.numeric(options$min_abs_corr)
+}
+coverage <- if (is.null(options$coverage)) {
+  0.95
+} else {
+  as.numeric(options$coverage)
+}
+
 summary_rows <- vector("list", length(methods))
+method_qc <- list()
 
 for (i in seq_along(methods)) {
   method <- methods[[i]]
@@ -108,30 +152,58 @@ for (i in seq_along(methods)) {
 
   if (method == "p_value") {
     result <- prioritize_p(variants)
-    write_tsv(result, file.path(method_dir, "variants.tsv"))
+    if (emit_tsv) {
+      write_tsv(result, file.path(method_dir, "variants.tsv"))
+    }
     summary_rows[[i]] <- data.frame(
       method_id = method,
       variants = nrow(result),
       selected = sum(result$selected),
-      credible_sets = NA_integer_
+      credible_sets = NA_integer_,
+      stringsAsFactors = FALSE
+    )
+    method_qc[[method]] <- list(
+      variants = nrow(result),
+      selected = sum(result$selected)
     )
   } else if (method == "p_ld") {
     result <- prioritize_pld(variants, R, thresholds)
-    write_tsv(result, file.path(method_dir, "variants.tsv"))
+    if (emit_tsv) {
+      write_tsv(result, file.path(method_dir, "variants.tsv"))
+      jsonlite::write_json(
+        list(r2_thresholds = thresholds, definition = "independent greedy runs"),
+        file.path(method_dir, "diagnostics.json"),
+        auto_unbox = TRUE,
+        pretty = TRUE
+      )
+    }
+    by_thresh <- stats::setNames(
+      lapply(thresholds, function(t) {
+        sum(result$selected[result$r2_threshold == t])
+      }),
+      as.character(thresholds)
+    )
     summary_rows[[i]] <- data.frame(
       method_id = method,
       variants = nrow(result),
       selected = sum(result$selected),
-      credible_sets = NA_integer_
+      credible_sets = NA_integer_,
+      stringsAsFactors = FALSE
     )
-    jsonlite::write_json(
-      list(r2_thresholds = thresholds, definition = "independent greedy runs"),
-      file.path(method_dir, "diagnostics.json"),
-      auto_unbox = TRUE,
-      pretty = TRUE
+    method_qc[[method]] <- list(
+      variants = nrow(variants),
+      selected_by_r2 = by_thresh
     )
   } else {
-    args <- list(variants = variants, R = R)
+    args <- list(
+      variants = variants,
+      R = R,
+      effective_n = effective_n,
+      L = max_causal,
+      coverage = coverage,
+      min_abs_corr = min_abs_corr,
+      max_iter = max_iter
+    )
     if (method == "susie_rss") {
       result <- do.call(run_susie_rss, args)
     } else {
@@ -144,33 +216,51 @@ for (i in seq_along(methods)) {
       )
     }
 
-    write_tsv(result$variants, file.path(method_dir, "variants.tsv"))
-    write_tsv(result$credible_sets, file.path(method_dir, "credible_sets.tsv"))
-    write_tsv(
-      result$credible_set_membership,
-      file.path(method_dir, "credible_set_membership.tsv")
-    )
-    jsonlite::write_json(
-      result$diagnostics,
-      file.path(method_dir, "diagnostics.json"),
-      auto_unbox = TRUE,
-      pretty = TRUE,
-      null = "null",
-      na = "null"
-    )
-    jsonlite::write_json(
-      result$provenance,
-      file.path(method_dir, "provenance.json"),
-      auto_unbox = TRUE,
-      pretty = TRUE,
-      null = "null",
-      na = "null"
-    )
+    if (emit_tsv) {
+      write_tsv(result$variants, file.path(method_dir, "variants.tsv"))
+      write_tsv(result$credible_sets, file.path(method_dir, "credible_sets.tsv"))
+      write_tsv(
+        result$credible_set_membership,
+        file.path(method_dir, "credible_set_membership.tsv")
+      )
+      jsonlite::write_json(
+        result$diagnostics,
+        file.path(method_dir, "diagnostics.json"),
+        auto_unbox = TRUE,
+        pretty = TRUE,
+        null = "null",
+        na = "null"
+      )
+      jsonlite::write_json(
+        result$provenance,
+        file.path(method_dir, "provenance.json"),
+        auto_unbox = TRUE,
+        pretty = TRUE,
+        null = "null",
+        na = "null"
+      )
+    }
     summary_rows[[i]] <- data.frame(
       method_id = method,
       variants = nrow(result$variants),
       selected = NA_integer_,
-      credible_sets = nrow(result$credible_sets)
+      credible_sets = nrow(result$credible_sets),
+      stringsAsFactors = FALSE
+    )
+    diag_compact <- result$diagnostics
+    diag_compact$R_finite_diagnostics <- NULL
+    method_qc[[method]] <- c(
+      list(
+        variants = nrow(result$variants),
+        credible_sets = nrow(result$credible_sets),
+        max_pip = max(result$variants$PIP, na.rm = TRUE),
+        min_cs_purity = if (nrow(result$credible_sets) > 0L) {
+          min(result$credible_sets$min_abs_corr, na.rm = TRUE)
+        } else {
+          NA_real_
+        }
+      ),
+      diag_compact
     )
   }
   saveRDS(
@@ -183,4 +273,14 @@ for (i in seq_along(methods)) {
   )
 }
 
-write_tsv(do.call(rbind, summary_rows), file.path(outdir, "method_summary.tsv"))
+if (emit_tsv) {
+  write_tsv(do.call(rbind, summary_rows), file.path(outdir, "method_summary.tsv"))
+}
+jsonlite::write_json(
+  method_qc,
+  file.path(outdir, "method_qc.json"),
+  auto_unbox = TRUE,
+  pretty = TRUE,
+  null = "null",
+  na = "null"
+)

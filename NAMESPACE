@@ -1,4 +1,5 @@
 export(read_gwas_vcf)
+export(read_ld_matrix)
 export(validate_gwas_stats)
 export(validate_ld_matrix)
 export(prioritize_p)

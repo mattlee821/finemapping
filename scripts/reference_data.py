@@ -446,7 +446,8 @@ def command_check(args: argparse.Namespace) -> int:
 def command_paths(args: argparse.Namespace) -> int:
     root = reference_root(args.root)
     paths = {"chain": root / "genome" / "hg38ToHg19.over.chain.gz", "grch37_fasta": root / "genome" / "GRCh37.fa",
-             "grch37_fai": root / "genome" / "GRCh37.fa.fai", "gene_annotation": root / "annotation" / "gene_regions_GRCh38.tsv"}
+             "grch37_fai": root / "genome" / "GRCh37.fa.fai", "gene_annotation": root / "annotation" / "gene_regions_GRCh38.tsv",
+             "panukb_dir": root / "panukb"}
     if args.nextflow:
         print(" ".join(f"--{key} {value}" for key, value in paths.items()))
     else:

@@ -1,38 +1,29 @@
 #!/usr/bin/env bash
-# Install the local tool environment and optionally pull the published tools image.
+# Install and activate the local GWASfinemapping runtime environment (and optional GHCR image).
 #
 # Usage:
-#   bash scripts/source.sh                    # tools and renv packages
-#   bash scripts/source.sh --tools-only       # Hail, ldcov, Python, Java, and R
-#   bash scripts/source.sh --r-packages       # restore the R project from renv.lock
+#   bash scripts/source.sh                    # install conda/Python tools + R packages (renv + R CMD INSTALL .)
+#   bash scripts/source.sh --tools-only       # install conda/Python/Java/R runtime without renv restore
+#   bash scripts/source.sh --r-packages       # restore renv.lock and install the local R package
 #   bash scripts/source.sh --container apptainer
 #   bash scripts/source.sh --container docker
-#   bash scripts/source.sh --env-only
-#   source scripts/source.sh                  # activate an installed environment
+#   bash scripts/source.sh --env-only         # write .env from .env.example if absent
+#   source scripts/source.sh                  # activate an installed environment in the current shell
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -n "${BASH_VERSION:-}" ]]; then
+  _GWASFM_SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+elif [[ -n "${ZSH_VERSION:-}" ]]; then
+  _GWASFM_SRC_DIR="$(cd "$(dirname "${(%):-%x}")" && pwd)"
+else
+  _GWASFM_SRC_DIR="$(pwd)/scripts"
+fi
+# shellcheck source=lib/env.sh
+source "${_GWASFM_SRC_DIR}/lib/env.sh"
+
+ROOT_DIR="${GWASFM_ROOT}"
 ENV_FILE="${ROOT_DIR}/.env"
 ENV_TEMPLATE="${ROOT_DIR}/.env.example"
 CONTAINER_DEFAULT="ghcr.io/mattlee821/finemapping:latest"
-
-load_env_defaults() {
-  local file="$1" line key value
-  [[ -f "$file" ]] || return 0
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
-    [[ "$line" == *=* ]] || continue
-    key="${line%%=*}"
-    key="${key#export }"
-    key="${key//[[:space:]]/}"
-    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-    value="${line#*=}"
-    value="${value%\"}"; value="${value#\"}"
-    value="${value%\'}"; value="${value#\'}"
-    if ! printenv "$key" >/dev/null 2>&1; then
-      export "$key=$value"
-    fi
-  done < "$file"
-}
 
 ensure_env_file() {
   if [[ ! -f "$ENV_FILE" ]]; then
@@ -46,10 +37,8 @@ ensure_env_file() {
 }
 
 tools_root() {
-  local root="${GWASFM_TOOLS_ROOT:-}"
-  [[ -n "$root" ]] || root="${HOME}/.cache/gwasfinemapping"
-  [[ "$root" == /* ]] || root="${ROOT_DIR}/${root}"
-  printf '%s\n' "$root"
+  gwasfm_resolve_paths
+  printf '%s\n' "${GWASFM_TOOLS_ROOT}"
 }
 
 mamba_platform() {
@@ -72,13 +61,17 @@ install_micromamba() {
     MAMBA_BIN="$(command -v micromamba)"
   else
     bin="${root}/bin/micromamba"
-    platform="$(mamba_platform)"
-    mkdir -p "$(dirname "$bin")"
-    echo "Downloading micromamba for ${platform} into $(dirname "$bin")"
-    curl -fsSL "https://micro.mamba.pm/api/micromamba/${platform}/latest" \
-      | tar -xj -C "$root" bin/micromamba
-    chmod +x "$bin"
-    MAMBA_BIN="$bin"
+    if [[ -x "$bin" ]]; then
+      MAMBA_BIN="$bin"
+    else
+      platform="$(mamba_platform)"
+      mkdir -p "$(dirname "$bin")"
+      echo "Downloading micromamba for ${platform} into $(dirname "$bin")"
+      curl -fsSL "https://micro.mamba.pm/api/micromamba/${platform}/latest" \
+        | tar -xj -C "$root" bin/micromamba
+      chmod +x "$bin"
+      MAMBA_BIN="$bin"
+    fi
   fi
   export MAMBA_ROOT_PREFIX="${root}/mamba"
 }
@@ -156,8 +149,7 @@ install_python_tools() {
   if [[ "$(uname -s)-$(uname -m)" == "Darwin-x86_64" ]]; then
     install_mac_intel_lazybgen "$python"
   fi
-  # PYTHONNOUSERSITE: pip must not treat packages in ~/.local as installed, because the environment is activated without them
-  PYTHONNOUSERSITE=1 "$python" -m pip install --upgrade pip   # the pip that conda ships (24.x) cannot resolve the pinned stack
+  PYTHONNOUSERSITE=1 "$python" -m pip install --upgrade pip
   PYTHONNOUSERSITE=1 "$python" -m pip install -r "${ROOT_DIR}/requirements-tools.txt"
 }
 
@@ -177,34 +169,31 @@ install_environment() {
   elif [[ -d "${prefix}/conda-meta" ]]; then
     echo "Updating tool environment from environment.yml"
     "$MAMBA_BIN" install -y -q -p "$prefix" -f "$spec"
+    install_python_tools "${prefix}/bin/python"
+    printf '%s\n' "$hash" > "$stamp"
   else
     echo "Creating tool environment (first install may take several minutes)"
     "$MAMBA_BIN" create -y -q -p "$prefix" -f "$spec"
+    install_python_tools "${prefix}/bin/python"
+    mkdir -p "$prefix"
+    printf '%s\n' "$hash" > "$stamp"
   fi
-  install_python_tools "${prefix}/bin/python"
-  mkdir -p "$prefix"
-  printf '%s\n' "$hash" > "$stamp"
 }
 
 activate_tools() {
-  local root prefix
-  root="$(tools_root)"
-  prefix="${root}/env"
-  if [[ ! -x "${prefix}/bin/python" ]]; then
-    echo "Tool environment not found. Run 'bash scripts/source.sh --tools-only' first." >&2
+  gwasfm_activate_runtime
+  if ! gwasfm_in_container && [[ ! -x "${GWASFM_TOOLS_ROOT}/env/bin/python" ]]; then
+    echo "Tool environment not found at ${GWASFM_TOOLS_ROOT}/env. Run 'bash scripts/source.sh' first." >&2
     return 1
-  fi
-  export GWASFM_TOOLS_ROOT="$root"
-  export GWASFM_ENV="$prefix"
-  export PATH="${prefix}/bin:${PATH}"
-  export PYTHONNOUSERSITE=1
-  if [[ -d "${prefix}/lib/jvm" ]]; then
-    export JAVA_HOME="${prefix}/lib/jvm"
   fi
 }
 
 validate_tools() {
-  python3 -c 'import hail, lazybgen, ldcov, pandas, pyarrow; from importlib.metadata import version; print("Hail", version("hail"), "| ldcov", version("ldcov"), "| lazybgen", version("lazybgen"))'
+  python3 -c 'import hail, lazybgen, ldcov, pandas, pyarrow, pyliftover; from importlib.metadata import version; print("Hail", version("hail"), "| ldcov", version("ldcov"), "| lazybgen", version("lazybgen"), "| pyarrow", version("pyarrow"))'
+  bcftools --version | head -n 1
+  if command -v nextflow >/dev/null 2>&1; then
+    nextflow -version | grep -E "version|Nextflow" | head -n 1 || true
+  fi
 }
 
 restore_r_packages() {
@@ -212,11 +201,21 @@ restore_r_packages() {
     echo "Rscript is required to restore the R package environment." >&2
     return 1
   fi
-  local library_root
+  local library_root r_lib
   library_root="$(tools_root)/renv-library"
   mkdir -p "$library_root"
-  (cd "$ROOT_DIR" && RENV_PATHS_LIBRARY="$library_root" RENV_CONFIG_PROMPT=FALSE \
-    Rscript -e 'renv::restore(prompt = FALSE)')
+  (
+    cd "$ROOT_DIR"
+    export RENV_PROJECT="$ROOT_DIR"
+    export R_PROFILE_USER="${ROOT_DIR}/.Rprofile"
+    export RENV_PATHS_LIBRARY="$library_root"
+    export RENV_CONFIG_PROMPT=FALSE
+    export RENV_CONFIG_SYNCHRONIZED_CHECK=FALSE
+    Rscript -e 'renv::restore(prompt = FALSE)'
+    r_lib="$(Rscript -e 'cat(.libPaths()[1])')"
+    R_PROFILE_USER="" R CMD INSTALL --no-multiarch --library="$r_lib" .
+    Rscript -e 'stopifnot(requireNamespace("susieR", quietly = TRUE), requireNamespace("jsonlite", quietly = TRUE), requireNamespace("gwasfinemapping", quietly = TRUE)); cat("R packages verified: gwasfinemapping", as.character(packageVersion("gwasfinemapping")), "| susieR", as.character(packageVersion("susieR")), "\n")'
+  )
 }
 
 pull_container() {
@@ -237,7 +236,7 @@ pull_container() {
         return 1
       fi
       sif="${root}/gwasfinemapping.sif"
-      mkdir -p "$root"
+      mkdir -p "$root" "${APPTAINER_CACHEDIR}"
       "$command" pull --force "$sif" "docker://${GWASFM_CONTAINER_REF:-$CONTAINER_DEFAULT}"
       export GWASFM_CONTAINER_IMAGE="$sif"
       ;;
@@ -265,18 +264,22 @@ main() {
         shift
         ;;
       --container=*) container="${1#*=}"; container_set=1 ;;
-      -h|--help) sed -n '2,13p' "${BASH_SOURCE[0]}"; return 0 ;;
+      -h|--help) sed -n '2,12p' "${BASH_SOURCE[0]}"; return 0 ;;
       *) echo "Unknown option: $1" >&2; return 2 ;;
     esac
     shift
   done
 
   ensure_env_file
-  load_env_defaults "$ENV_FILE"
+  gwasfm_resolve_paths
   if [[ "$container_set" -eq 0 ]]; then
     container="${GWASFM_CONTAINER:-}"
   fi
   if [[ "$env_only" -eq 1 ]]; then
+    return 0
+  fi
+  if gwasfm_in_container; then
+    validate_tools
     return 0
   fi
   if [[ "$r_only" -eq 1 ]]; then
@@ -289,11 +292,12 @@ main() {
     [[ "$tools_only" -eq 1 ]] || restore_r_packages
   fi
   [[ -z "$container" ]] || pull_container "$container"
-  echo "Setup complete. In a new shell, run 'source scripts/source.sh' to activate the tools."
+  echo "Setup complete. Run 'source scripts/source.sh' to activate in a shell, then 'bash scripts/test.sh'."
 }
 
-if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
-  load_env_defaults "$ENV_FILE"
+if [[ -n "${ZSH_EVAL_CONTEXT:-}" && "${ZSH_EVAL_CONTEXT}" == *:file* ]]; then
+  activate_tools
+elif [[ -n "${BASH_SOURCE[0]:-}" && "${BASH_SOURCE[0]}" != "$0" ]]; then
   activate_tools
 else
   main "$@"

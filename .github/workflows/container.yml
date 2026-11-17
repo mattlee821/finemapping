@@ -2,7 +2,7 @@ name: container
 
 on:
   push:
-    branches: [main]
+    branches: [main, gwasfinemapping]
     tags: ["v*"]
   pull_request:
     paths:
@@ -12,12 +12,16 @@ on:
       - "DESCRIPTION"
       - "NAMESPACE"
       - "R/**"
+      - "conf/**"
+      - "nextflow.config"
+      - "finemapping.nf"
       - "environment.yml"
       - "man/**"
       - "renv.lock"
       - "renv/**"
       - "scripts/**"
       - "tests/**"
+      - "benchmark/**"
       - "requirements-tools.txt"
   workflow_dispatch:
 
@@ -26,12 +30,24 @@ permissions:
   packages: write
 
 jobs:
-  image:
+  validate_and_publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
+      - name: Build local amd64 image for test & benchmark gate
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: gwasfinemapping:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run test suite and benchmark inside container
+        run: |
+          docker run --rm gwasfinemapping:ci bash -lc "bash scripts/test.sh && bash scripts/benchmark.sh"
       - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
         with:
@@ -39,6 +55,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
+        if: github.event_name != 'pull_request'
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/mattlee821/finemapping
@@ -46,11 +63,13 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=sha
-      - uses: docker/build-push-action@v6
+      - name: Publish multi-arch GHCR image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

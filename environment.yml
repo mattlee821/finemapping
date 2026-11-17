@@ -5,6 +5,7 @@ channels:
   - bioconda
 dependencies:
   - openjdk=21
+  - nextflow>=25
   - python=3.12
   - bcftools=1.24
   - pandas>=2.2,<3

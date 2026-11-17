@@ -1,5 +1,5 @@
 validate_ld_matrix <- function(R, variant_ids = NULL, check_psd = FALSE,
-                               tolerance = 1e-8) {
+                               tolerance = 1e-8, psd_max_variants = 5000L) {
   if (!is.matrix(R) || !is.numeric(R)) {
     stop("LD must be a numeric matrix.", call. = FALSE)
   }
@@ -9,8 +9,12 @@ validate_ld_matrix <- function(R, variant_ids = NULL, check_psd = FALSE,
   if (length(tolerance) != 1L || !is.finite(tolerance) || tolerance <= 0) {
     stop("`tolerance` must be one positive finite number.", call. = FALSE)
   }
+  if (length(psd_max_variants) != 1L || !is.numeric(psd_max_variants) ||
+      is.na(psd_max_variants) || psd_max_variants < 1L) {
+    stop("`psd_max_variants` must be one positive integer.", call. = FALSE)
+  }
   if (nrow(R) == 0L) {
-    return(invisible(TRUE))
+    return(invisible("empty"))
   }
 
   row_ids <- rownames(R)
@@ -44,12 +48,20 @@ validate_ld_matrix <- function(R, variant_ids = NULL, check_psd = FALSE,
     stop("LD correlations must be within [-1, 1].", call. = FALSE)
   }
 
+  psd_status <- "not_requested"
   if (check_psd) {
-    min_eigenvalue <- min(eigen(R, symmetric = TRUE, only.values = TRUE)$values)
-    if (min_eigenvalue < -tolerance) {
-      stop("LD matrix is not positive semidefinite; no repair was applied.",
-           call. = FALSE)
+    if (nrow(R) <= as.integer(psd_max_variants)) {
+      min_eigenvalue <- min(eigen(R, symmetric = TRUE, only.values = TRUE)$values)
+      if (min_eigenvalue < -tolerance) {
+        stop("LD matrix is not positive semidefinite; no repair was applied.",
+             call. = FALSE)
+      }
+      psd_status <- "passed"
+    } else {
+      psd_status <- "skipped_large_m"
     }
   }
-  invisible(TRUE)
+  res <- TRUE
+  attr(res, "psd_status") <- psd_status
+  invisible(res)
 }
