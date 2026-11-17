@@ -251,6 +251,14 @@ status_tone <- switch(
   NO_SIGNIFICANT_LOCI = "neutral",
   "bad"
 )
+anc_status <- as.character(qc$ancestry_ld_status %||% prov$ancestry_ld_status %||% "")
+header_badges <- badge(status, status_tone)
+if (anc_status == "multi_ancestry_gwas_single_panel_ld") {
+  header_badges <- paste(
+    header_badges,
+    badge(paste0("ALL→", prov$ld_population, " LD"), "warn")
+  )
+}
 
 loci_list <- qc$loci %||% list()
 sig_lp <- as.numeric(prov$significance_threshold_lp %||% 7.30103)
@@ -274,6 +282,7 @@ locus_rows_html <- if (length(loci_list) == 0L) {
     if (isTRUE(loc$mhc_core_grc)) flags <- c(flags, badge("GRC-HLA", "warn"))
     if (isTRUE(loc$cis_overlap)) flags <- c(flags, badge("cis", "info"))
     if (isTRUE(loc$split_at_panukb_radius)) flags <- c(flags, badge("9.5Mb-split", "warn"))
+    if (isTRUE(loc$sample_size_heterogeneity_warning)) flags <- c(flags, badge("SS-het", "warn"))
     if (identical(m_rss$converged, FALSE)) flags <- c(flags, badge("RSS-nonconv", "bad"))
     if (identical(m_rrss$converged, FALSE)) flags <- c(flags, badge("rRSS-nonconv", "bad"))
     if (isTRUE(m_rrss$SER_fallback) || isTRUE(m_rrss$R_reliability_flag)) {
@@ -554,7 +563,7 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; background: rgba(14
   fmt_int(prov$ld_reference_sample_size),
   fmt_num((as.numeric(prov$region_flank_bp %||% 1500000)) / 1e6, 2L),
   html_escape(prov$mhc_policy %||% "included_single_region"),
-  badge(status, status_tone),
+  header_badges,
   fmt_int(qc$genomewide_significant_variants),
   fmt_num(sig_lp, 2L),
   fmt_int(qc$analyzed_regions_count), fmt_int(qc$candidate_regions_total),

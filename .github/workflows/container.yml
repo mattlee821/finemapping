@@ -45,9 +45,9 @@ jobs:
           tags: gwasfinemapping:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Run test suite and benchmark inside container
+      - name: Run test suite and offline benchmark inside container
         run: |
-          docker run --rm gwasfinemapping:ci bash -lc "bash scripts/test.sh && bash scripts/benchmark.sh"
+          docker run --rm gwasfinemapping:ci bash -lc "bash scripts/test.sh && bash scripts/benchmark.sh --offline"
       - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
         with:

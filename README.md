@@ -9,7 +9,7 @@ Scalable statistical fine-mapping and variant prioritisation for standardised GR
 - **Evidence-backed region & MHC defaults:** Default $P \le 5 \times 10^{-8}$ (`LP >= 7.30103`) significance gate across all region types; Kanai et al. (2021) greedy `±1.5 Mb` (**3 Mb**) merged lead windows (with a 9.5 Mb ceiling respecting Pan-UKB's 10 Mb BlockMatrix radius); gene-anchored `cis_gene` (`gene ± 1 Mb`) windows for molecular traits; and single-region extended MHC (`chr6:25.5–34.0 Mb` GRCh38) with `mhc_region` / `mhc_core_grc` flags and `--exclude-mhc`.
 - **Ordered Phase 1 methods:** Deterministic `p-value` ranking and `p-ld` ($r^2 < 0.1, 0.01, 0.001$) prioritisation heuristics, followed by Bayesian `SuSiE-RSS` and mismatch-aware `SuSiE-rRSS` (`susieR` 2.0.0, `R_finite`, `R_mismatch = "eb_mix"`).
 - **Storage-light, `coloc`-ready outputs (~20 MB/GWAS; ~200 GB per 10,000 GWAS):** Retains only four standalone `xz`-compressed `.rda` files (`methods/{p-value,p-ld,susie-rss,susie-rrss}.rda` with `GWAS_VARIANT_ID`-named `alpha` and `lbf_variable` matrices ready for `coloc::coloc.susie()` and `coloc::coloc.bf_bf()`), `{metadata,provenance,qc}.json`, and a self-contained `report.html` (plus batch `manifest.html`), automatically cleaning up multi-gigabyte scratch LD files.
-- **Portable local, container & SLURM setup:** One-command bootstrap (`scripts/source.sh`), reference installer (`scripts/install_reference_data.sh`), validation test suite (`scripts/test.sh`), and deterministic benchmark (`scripts/benchmark.sh`) matching `GWASprocessing`.
+- **Portable local, container & SLURM setup:** One-command bootstrap (`scripts/source.sh`), reference installer (`scripts/install_reference_data.sh`), validation test suite (`scripts/test.sh`), and reproducible real-data + synthetic offline benchmark (`scripts/benchmark.sh`) matching `GWASprocessing`.
 
 ## Quickstart
 
@@ -22,12 +22,15 @@ source scripts/source.sh
 bash scripts/install_reference_data.sh install
 bash scripts/install_reference_data.sh check
 
-# 3. Validate installation (unit tests + end-to-end synthetic smoke test & benchmark)
+# 3. Validate installation (unit tests, R CMD check, Nextflow dry-run/idempotency + real-data benchmark)
 bash scripts/test.sh
-bash scripts/benchmark.sh
+bash scripts/benchmark.sh            # Locke 2015 BMI + Sun 2023 UKB-PPP NPPB against Pan-UKB EUR LD
+bash scripts/benchmark.sh --offline  # zero-network synthetic benchmark (used in container CI)
 
-# 4. Run fine-mapping locally or on SLURM (single GWAS-VCF or batch manifest)
+# 4. Run fine-mapping locally or on SLURM (GWASprocessing tree, manifest, or single GWAS-VCF)
+bash scripts/finemap.sh --input-dir /path/to/GWASprocessing/data/GWAS --ld-pop EUR --outdir results/ --dry-run
+bash scripts/finemap.sh --input-dir /path/to/GWASprocessing/data/GWAS --only-study sun_2023_37794186 --ld-pop EUR --outdir results/ --report false
 bash scripts/finemap.sh --vcf /path/to/trait.vcf.gz --study-id study1 --gwas-id trait1 --ld-pop EUR --outdir results/
-# Or submit directly to SLURM:
-sbatch scripts/finemap.sh --manifest manifest.tsv --ld-pop EUR --outdir results/ --slurm
+# Or submit directly to SLURM (skips already-completed rows in results/.finemap_state.tsv unless --force):
+sbatch scripts/finemap.sh --input-dir /path/to/GWASprocessing/data/GWAS --ld-pop EUR --outdir results/ --slurm
 ```

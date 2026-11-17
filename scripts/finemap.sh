@@ -1,69 +1,93 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=gwasfm
+#SBATCH --job-name=GWASfinemapping
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=8G
 #SBATCH --time=48:00:00
 #SBATCH --output=slurm-gwasfm-%j.out
 #
 # Unified local / SLURM entrypoint for GWASfinemapping (mirrors GWASprocessing/src/standardise.sh).
-# Can be invoked directly via `bash scripts/finemap.sh ...` or submitted via `sbatch scripts/finemap.sh ...`.
-#
-# Examples:
-#   bash scripts/finemap.sh --vcf trait.vcf.gz --study-id ukb --gwas-id bmi --ld-pop EUR --outdir results/
-#   sbatch scripts/finemap.sh --manifest manifest.tsv --ld-pop EUR --outdir results/ --slurm
+# Usage:
+#   bash scripts/finemap.sh [options]
+#   sbatch scripts/finemap.sh [options] --slurm
 
 set -euo pipefail
 
-if [[ -n "${SLURM_SUBMIT_DIR:-}" && -f "${SLURM_SUBMIT_DIR}/scripts/lib/env.sh" ]]; then
-  SCRIPT_DIR="${SLURM_SUBMIT_DIR}/scripts"
-else
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-fi
+find_root() {
+  if [[ -n "${GWASFM_ROOT_OVERRIDE:-}" ]]; then
+    (cd "${GWASFM_ROOT_OVERRIDE}" && pwd); return
+  fi
+  local script_root candidate
+  script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  if [[ -f "${script_root}/finemapping.nf" ]]; then
+    printf '%s\n' "${script_root}"; return
+  fi
+  for candidate in "${SLURM_SUBMIT_DIR:-}" "${PWD}"; do
+    if [[ -n "${candidate}" && -f "${candidate}/finemapping.nf" ]]; then
+      (cd "${candidate}" && pwd); return
+    fi
+  done
+  echo "Cannot locate GWASfinemapping root (finemapping.nf)." >&2
+  exit 2
+}
+
+ROOT_DIR="$(find_root)"
 # shellcheck source=lib/env.sh
-source "${SCRIPT_DIR}/lib/env.sh"
+source "${ROOT_DIR}/scripts/lib/env.sh"
 gwasfm_activate_runtime
 
 usage() {
   cat <<'EOF'
 Usage:
   bash scripts/finemap.sh [options]
-  sbatch scripts/finemap.sh [options] --slurm
+  sbatch scripts/finemap.sh [options]
 
-Required (one of --vcf or --manifest, plus --outdir):
+Inputs (supply one of --input-dir, --manifest, or --vcf, plus --outdir):
+  --input-dir DIR            GWASprocessing root, study standardise/ folder, or single GWAS folder
+  --manifest PATH            TSV manifest with 'vcf' or 'gwas_dir' column
   --vcf PATH                 Single GRCh38 GWAS-VCF (.vcf.gz)
-  --manifest PATH            TSV manifest with column 'vcf' (and optional study_id, gwas_id, metadata, qc, gene_id)
   --outdir DIR               Output directory
 
-Single-GWAS metadata options:
-  --study-id ID              Study identifier (required with --vcf unless --metadata supplies it)
-  --gwas-id ID               GWAS identifier (required with --vcf unless --metadata supplies it)
-  --metadata PATH            Optional GWASprocessing metadata.json
-  --qc PATH                  Optional GWASprocessing qc.json
+Single-GWAS / filter options:
+  --only-study STUDY_ID      Filter --input-dir or --manifest to one study_id
+  --study-id ID              Study identifier override for --vcf
+  --gwas-id ID               GWAS identifier override for --vcf
+  --metadata PATH            Optional metadata.json override for --vcf
+  --qc PATH                  Optional qc.json override for --vcf
   --trait NAME               Optional phenotype label
-  --ancestry CODE            Optional GWAS ancestry check label
-  --gene-id ID               Optional UniProt ID or HGNC gene symbol for cis_gene window
+  --ancestry CODE            Optional GWAS ancestry code
+  --gene-id ID               Optional UniProt ID or HGNC gene symbol for cis_gene
 
 Fine-mapping & reference options:
   --ld-pop POP               Pan-UKB LD population: AFR|AMR|CSA|EAS|EUR|MID (default: EUR)
-  --reference-root DIR       Reference data root (default: $GWASFM_REFERENCE_ROOT)
+  --reference-root DIR       Reference root (default: $GWASFM_REFERENCE_ROOT)
   --exclude-mhc              Exclude extended MHC (chr6:25.5-34.0 Mb GRCh38)
-  --significance-lp FLOAT    Regional significance gate in -log10(P) (default: 7.30103 = P <= 5e-8)
+  --significance-lp FLOAT    Significance gate in -log10(P) (default: 7.30103 = P <= 5e-8)
   --cis-significance-lp FLT  Optional cis_gene significance gate override
   --region-flank-bp INT      Greedy lead flank in bp (default: 1500000 = 3 Mb window)
   --max-loci INT             Cap analyzed regions per GWAS (0 = all; default: 0)
-  --keep-intermediates       Retain scratch per-locus LD/VCF/TSV files for debugging
 
-Execution options:
-  --slurm                    Submit tasks via Nextflow SLURM profile
-  --container ENGINE         Run tasks in container: apptainer|docker
+Batch control & execution (matching GWASprocessing):
+  --row-limit INT            Eligible rows to run (0 = all; default: 0)
+  --force                    Re-run even when complete outputs exist for current settings
+  --dry-run                  Validate and summarize inputs without running fine-mapping
+  --report true|false        Render per-GWAS report.html (default: true)
+  --keep-intermediates       Retain per-locus scratch LD/VCF/TSV files
+  --allow-ancestry-mismatch  Allow mismatched single-ancestry LD
+  --profile NAME             Nextflow profile (default: slurm under sbatch, else local)
+  --slurm                    Alias for --profile slurm
+  --container ENGINE         Run tasks inside container: apptainer|docker
   --max-forks INT            Max concurrent GWAS jobs (default: $GWASFM_MAX_FORKS or 2)
   --resume                   Pass -resume to Nextflow
 EOF
 }
 
-VCF=""
+INPUT_DIR=""
 MANIFEST=""
+VCF=""
 OUTDIR=""
+ONLY_STUDY=""
 STUDY_ID=""
 GWAS_ID=""
 METADATA=""
@@ -78,18 +102,25 @@ SIG_LP=""
 CIS_SIG_LP=""
 FLANK_BP=""
 MAX_LOCI=""
+ROW_LIMIT="0"
+FORCE="false"
+DRY_RUN="false"
+REPORT="true"
 KEEP_INTERMEDIATES="false"
+ALLOW_ANC_MISMATCH="false"
 LOCAL_LD_PANEL=""
-USE_SLURM=0
+PROFILE=""
 CONTAINER_ENGINE=""
 MAX_FORKS=""
 RESUME=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --vcf) VCF="$2"; shift 2 ;;
+    --input-dir|--input_dir) INPUT_DIR="$2"; shift 2 ;;
     --manifest) MANIFEST="$2"; shift 2 ;;
+    --vcf) VCF="$2"; shift 2 ;;
     --outdir) OUTDIR="$2"; shift 2 ;;
+    --only-study|--only_study) ONLY_STUDY="$2"; shift 2 ;;
     --study-id|--study_id) STUDY_ID="$2"; shift 2 ;;
     --gwas-id|--gwas_id) GWAS_ID="$2"; shift 2 ;;
     --metadata) METADATA="$2"; shift 2 ;;
@@ -104,9 +135,15 @@ while [[ $# -gt 0 ]]; do
     --cis-significance-lp) CIS_SIG_LP="$2"; shift 2 ;;
     --region-flank-bp) FLANK_BP="$2"; shift 2 ;;
     --max-loci|--max_loci) MAX_LOCI="$2"; shift 2 ;;
+    --row-limit|--row_limit) ROW_LIMIT="$2"; shift 2 ;;
+    --force) FORCE="true"; shift ;;
+    --dry-run|--dry_run) DRY_RUN="true"; shift ;;
+    --report) REPORT="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"; shift 2 ;;
     --keep-intermediates) KEEP_INTERMEDIATES="true"; shift ;;
+    --allow-ancestry-mismatch) ALLOW_ANC_MISMATCH="true"; shift ;;
     --local-ld-panel) LOCAL_LD_PANEL="$2"; shift 2 ;;
-    --slurm) USE_SLURM=1; shift ;;
+    --profile) PROFILE="$2"; shift 2 ;;
+    --slurm) PROFILE="slurm"; shift ;;
     --container) CONTAINER_ENGINE="$2"; shift 2 ;;
     --max-forks|--max_forks) MAX_FORKS="$2"; shift 2 ;;
     --resume|-resume) RESUME=1; shift ;;
@@ -115,11 +152,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$OUTDIR" || ( -z "$VCF" && -z "$MANIFEST" ) ]]; then
-  echo "Error: supply --outdir and either --vcf or --manifest." >&2
+if [[ -z "$OUTDIR" || ( -z "$VCF" && -z "$MANIFEST" && -z "$INPUT_DIR" ) ]]; then
+  echo "Error: supply --outdir and one of --input-dir, --manifest, or --vcf." >&2
   usage >&2
   exit 2
 fi
+if [[ "$REPORT" != "true" && "$REPORT" != "false" ]]; then
+  echo "Error: --report must be true or false (got $REPORT)." >&2
+  exit 2
+fi
+
+resolve_abs() {
+  [[ "$1" = /* ]] && printf '%s\n' "$1" || printf '%s\n' "${PWD}/$1"
+}
+
+OUTDIR="$(resolve_abs "$OUTDIR")"
+REF_ROOT="$(resolve_abs "$REF_ROOT")"
+[[ -n "$INPUT_DIR" ]] && INPUT_DIR="$(resolve_abs "$INPUT_DIR")"
+[[ -n "$MANIFEST" ]] && MANIFEST="$(resolve_abs "$MANIFEST")"
+[[ -n "$VCF" ]] && VCF="$(resolve_abs "$VCF")"
+[[ -n "$METADATA" ]] && METADATA="$(resolve_abs "$METADATA")"
+[[ -n "$QC" ]] && QC="$(resolve_abs "$QC")"
+[[ -n "$LOCAL_LD_PANEL" ]] && LOCAL_LD_PANEL="$(resolve_abs "$LOCAL_LD_PANEL")"
 
 CHAIN="${REF_ROOT}/genome/hg38ToHg19.over.chain.gz"
 FASTA="${REF_ROOT}/genome/GRCh37.fa"
@@ -134,46 +188,122 @@ for req in "$CHAIN" "$FASTA" "$FAI"; do
   fi
 done
 
-PROFILES=("local")
-if [[ "$USE_SLURM" -eq 1 ]]; then
-  PROFILES=("slurm")
+if [[ -z "$PROFILE" ]]; then
+  if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    PROFILE="slurm"
+  else
+    PROFILE="${GWASFM_PROFILE:-local}"
+  fi
 fi
 if [[ -n "$CONTAINER_ENGINE" ]]; then
-  PROFILES+=("$CONTAINER_ENGINE")
+  PROFILE="${PROFILE},${CONTAINER_ENGINE}"
 elif [[ -n "${GWASFM_CONTAINER:-}" ]]; then
-  PROFILES+=("${GWASFM_CONTAINER}")
+  PROFILE="${PROFILE},${GWASFM_CONTAINER}"
 fi
-PROFILE_CSV="$(IFS=,; echo "${PROFILES[*]}")"
 
-NF_ARGS=(
-  run "${GWASFM_ROOT}/finemapping.nf"
-  -profile "$PROFILE_CSV"
+RUN_ID="${SLURM_JOB_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
+LOG_ROOT="${GWASFM_CACHE_DIR}/logs/runs/${RUN_ID}"
+NXF_LOG="${LOG_ROOT}/nextflow.${RUN_ID}.log"
+mkdir -p "$OUTDIR" "$LOG_ROOT" "${GWASFM_NXF_WORK}"
+
+NF_CMD=(
+  nextflow
+  -log "$NXF_LOG"
+  run "${ROOT_DIR}/finemapping.nf"
+  -profile "$PROFILE"
+  -work-dir "${GWASFM_NXF_WORK}"
   --outdir "$OUTDIR"
+  --log_root "$LOG_ROOT"
   --chain "$CHAIN"
   --grch37_fasta "$FASTA"
   --grch37_fai "$FAI"
+  --cache_dir "${GWASFM_CACHE_DIR}"
   --population "$LD_POP"
   --exclude_mhc "$EXCLUDE_MHC"
+  --row_limit "$ROW_LIMIT"
+  --force "$FORCE"
+  --dry_run "$DRY_RUN"
+  --report "$REPORT"
   --keep_intermediates "$KEEP_INTERMEDIATES"
+  --allow_ancestry_mismatch "$ALLOW_ANC_MISMATCH"
 )
 
-[[ -f "$GENE_ANNOT" ]] && NF_ARGS+=(--gene_annotation "$GENE_ANNOT")
-[[ -d "$PANUKB_DIR" ]] && NF_ARGS+=(--panukb_dir "$PANUKB_DIR")
-[[ -n "$VCF" ]] && NF_ARGS+=(--vcf "$VCF")
-[[ -n "$MANIFEST" ]] && NF_ARGS+=(--manifest "$MANIFEST")
-[[ -n "$STUDY_ID" ]] && NF_ARGS+=(--study_id "$STUDY_ID")
-[[ -n "$GWAS_ID" ]] && NF_ARGS+=(--gwas_id "$GWAS_ID")
-[[ -n "$METADATA" ]] && NF_ARGS+=(--metadata "$METADATA")
-[[ -n "$QC" ]] && NF_ARGS+=(--qc "$QC")
-[[ -n "$TRAIT" ]] && NF_ARGS+=(--trait "$TRAIT")
-[[ -n "$ANCESTRY" ]] && NF_ARGS+=(--ancestry "$ANCESTRY")
-[[ -n "$GENE_ID" ]] && NF_ARGS+=(--gene_id "$GENE_ID")
-[[ -n "$SIG_LP" ]] && NF_ARGS+=(--significance_lp "$SIG_LP")
-[[ -n "$CIS_SIG_LP" ]] && NF_ARGS+=(--cis_significance_lp "$CIS_SIG_LP")
-[[ -n "$FLANK_BP" ]] && NF_ARGS+=(--region_flank_bp "$FLANK_BP")
-[[ -n "$MAX_LOCI" ]] && NF_ARGS+=(--max_loci "$MAX_LOCI")
-[[ -n "$MAX_FORKS" ]] && NF_ARGS+=(--max_forks "$MAX_FORKS")
-[[ -n "$LOCAL_LD_PANEL" ]] && NF_ARGS+=(--local_ld_panel "$LOCAL_LD_PANEL")
-[[ "$RESUME" -eq 1 ]] && NF_ARGS+=(-resume)
+[[ -f "$GENE_ANNOT" ]] && NF_CMD+=(--gene_annotation "$GENE_ANNOT")
+[[ -d "$PANUKB_DIR" ]] && NF_CMD+=(--panukb_dir "$PANUKB_DIR")
+[[ -n "$INPUT_DIR" ]] && NF_CMD+=(--input_dir "$INPUT_DIR")
+[[ -n "$MANIFEST" ]] && NF_CMD+=(--manifest "$MANIFEST")
+[[ -n "$VCF" ]] && NF_CMD+=(--vcf "$VCF")
+[[ -n "$ONLY_STUDY" ]] && NF_CMD+=(--only_study "$ONLY_STUDY")
+[[ -n "$STUDY_ID" ]] && NF_CMD+=(--study_id "$STUDY_ID")
+[[ -n "$GWAS_ID" ]] && NF_CMD+=(--gwas_id "$GWAS_ID")
+[[ -n "$METADATA" ]] && NF_CMD+=(--metadata "$METADATA")
+[[ -n "$QC" ]] && NF_CMD+=(--qc "$QC")
+[[ -n "$TRAIT" ]] && NF_CMD+=(--trait "$TRAIT")
+[[ -n "$ANCESTRY" ]] && NF_CMD+=(--ancestry "$ANCESTRY")
+[[ -n "$GENE_ID" ]] && NF_CMD+=(--gene_id "$GENE_ID")
+[[ -n "$SIG_LP" ]] && NF_CMD+=(--significance_lp "$SIG_LP")
+[[ -n "$CIS_SIG_LP" ]] && NF_CMD+=(--cis_significance_lp "$CIS_SIG_LP")
+[[ -n "$FLANK_BP" ]] && NF_CMD+=(--region_flank_bp "$FLANK_BP")
+[[ -n "$MAX_LOCI" ]] && NF_CMD+=(--max_loci "$MAX_LOCI")
+[[ -n "$MAX_FORKS" ]] && NF_CMD+=(--max_forks "$MAX_FORKS")
+[[ -n "$LOCAL_LD_PANEL" ]] && NF_CMD+=(--local_ld_panel "$LOCAL_LD_PANEL")
+[[ "$RESUME" -eq 1 ]] && NF_CMD+=(-resume)
 
-exec nextflow "${NF_ARGS[@]}"
+nf_status=0
+"${NF_CMD[@]}" || nf_status=$?
+
+if [[ "$DRY_RUN" != "true" && -f "${LOG_ROOT}/run_manifest.tsv" ]]; then
+  slurm_out=""
+  if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    slurm_out="${SLURM_SUBMIT_DIR:-${PWD}}/slurm-gwasfm-${SLURM_JOB_ID}.out"
+  fi
+  python3 "${ROOT_DIR}/scripts/prepare_manifest.py" copy-logs \
+    --outdir "$OUTDIR" \
+    --run-manifest "${LOG_ROOT}/run_manifest.tsv" \
+    --nextflow-log "$NXF_LOG" \
+    ${slurm_out:+--slurm-out "$slurm_out"} || true
+fi
+
+summary_status=0
+python3 - "$LOG_ROOT" "$DRY_RUN" <<'PY' || summary_status=$?
+import json, sys
+from pathlib import Path
+
+log_root = Path(sys.argv[1])
+dry_run = sys.argv[2] == "true"
+prep_file = log_root / "run_manifest_summary.json"
+if not prep_file.is_file():
+    raise SystemExit(0)
+
+prep = json.loads(prep_file.read_text(encoding="utf-8"))
+state_file = log_root / "state_update_summary.json"
+upd = json.loads(state_file.read_text(encoding="utf-8")) if state_file.is_file() else {}
+invalid = prep.get("invalid") or []
+failed_rows = upd.get("failed_rows") or []
+
+print("\nGWASfinemapping summary")
+print(f"  Source:                 {prep.get('source', '')}")
+print(f"  Output directory:       {prep.get('outdir', '')}")
+print(f"  Rows to run:            {prep.get('rows_to_run', 0)}")
+print(f"  Rows skipped (complete):{prep.get('rows_skipped_complete', 0)}")
+if prep.get("rows_deferred_due_to_limit", 0):
+    print(f"  Deferred by row limit:  {prep['rows_deferred_due_to_limit']}")
+if invalid:
+    print(f"  Failed preflight:       {len(invalid)}")
+    for item in invalid:
+        print(f"    - {item.get('study_id')}/{item.get('gwas_id')}: {'; '.join(item.get('errors', []))}")
+if not dry_run:
+    print(f"  Completed this run:     {upd.get('updated', 0)}")
+    if failed_rows:
+        print(f"  Failed during run:      {len(failed_rows)}")
+        for fr in failed_rows:
+            print(f"    - {fr.get('row_key')}: {fr.get('error')}")
+    if prep.get("rows_to_run", 0) == 0 and prep.get("rows_skipped_complete", 0) > 0 and not invalid:
+        print("  All selected rows are already complete for current settings (use --force to re-run).")
+
+if (invalid or failed_rows) and not dry_run:
+    raise SystemExit(1)
+PY
+
+[[ "$nf_status" -ne 0 ]] && exit "$nf_status"
+exit "$summary_status"

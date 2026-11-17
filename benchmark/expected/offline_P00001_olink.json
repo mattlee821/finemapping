@@ -1,0 +1,757 @@
+{
+  "study_id": "sun_synthetic",
+  "gwas_id": "P00001_olink",
+  "overall_status": "PASS",
+  "ancestry_ld_status": "matched",
+  "genomewide_significant_variants": 54,
+  "analyzed_regions_count": 3,
+  "cis_status": "activated",
+  "mhc_status": "included_single_region",
+  "regions": {
+    "chr2_2020000_6835000": {
+      "region_type": "lead_locus",
+      "variants_matched": 30,
+      "pld_selected": {
+        "0.1": 2,
+        "0.01": 2,
+        "0.001": 2
+      },
+      "cs_count_rss": 2,
+      "cs_count_rrss": 2,
+      "converged_rss": true,
+      "converged_rrss": true,
+      "top_variants": [
+        {
+          "gwas_variant_id": "2:3520000:T:C",
+          "rsid": "rs_2_3520000",
+          "ez": 8.5575,
+          "lp": 16.9375,
+          "pip_rss": 0.9851,
+          "pip_rrss": 0.9851,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "2:5335000:T:C",
+          "rsid": "rs_2_5335000",
+          "ez": 7.5941,
+          "lp": 13.5085,
+          "pip_rss": 0.8397,
+          "pip_rrss": 0.8396,
+          "cs_rss": "L2",
+          "cs_rrss": "L2"
+        },
+        {
+          "gwas_variant_id": "2:5330000:T:C",
+          "rsid": "rs_2_5330000",
+          "ez": 7.3462,
+          "lp": 12.6901,
+          "pip_rss": 0.1375,
+          "pip_rrss": 0.1375,
+          "cs_rss": "L2",
+          "cs_rrss": "L2"
+        },
+        {
+          "gwas_variant_id": "2:5340000:T:C",
+          "rsid": "rs_2_5340000",
+          "ez": 7.0844,
+          "lp": 11.8549,
+          "pip_rss": 0.0217,
+          "pip_rrss": 0.0217,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3525000:T:C",
+          "rsid": "rs_2_3525000",
+          "ez": 7.9545,
+          "lp": 14.7446,
+          "pip_rss": 0.0075,
+          "pip_rrss": 0.0075,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3515000:T:C",
+          "rsid": "rs_2_3515000",
+          "ez": 7.9518,
+          "lp": 14.7355,
+          "pip_rss": 0.0074,
+          "pip_rrss": 0.0074,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5325000:T:C",
+          "rsid": "rs_2_5325000",
+          "ez": 6.6039,
+          "lp": 10.3973,
+          "pip_rss": 0.0009,
+          "pip_rrss": 0.0009,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5345000:T:C",
+          "rsid": "rs_2_5345000",
+          "ez": 6.362,
+          "lp": 9.7009,
+          "pip_rss": 0.0002,
+          "pip_rrss": 0.0002,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5320000:T:C",
+          "rsid": "rs_2_5320000",
+          "ez": 6.0714,
+          "lp": 8.8968,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3530000:T:C",
+          "rsid": "rs_2_3530000",
+          "ez": 7.2121,
+          "lp": 12.2587,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5350000:T:C",
+          "rsid": "rs_2_5350000",
+          "ez": 5.9895,
+          "lp": 8.6767,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3510000:T:C",
+          "rsid": "rs_2_3510000",
+          "ez": 7.0314,
+          "lp": 11.6891,
+          "pip_rss": 8e-06,
+          "pip_rrss": 9e-06,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5315000:T:C",
+          "rsid": "rs_2_5315000",
+          "ez": 5.4521,
+          "lp": 7.3028,
+          "pip_rss": 1e-06,
+          "pip_rrss": 1e-06,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3505000:T:C",
+          "rsid": "rs_2_3505000",
+          "ez": 6.6784,
+          "lp": 10.6168,
+          "pip_rss": 1e-06,
+          "pip_rrss": 1e-06,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5355000:T:C",
+          "rsid": "rs_2_5355000",
+          "ez": 5.2738,
+          "lp": 6.8739,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3535000:T:C",
+          "rsid": "rs_2_3535000",
+          "ez": 6.5326,
+          "lp": 10.1892,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5360000:T:C",
+          "rsid": "rs_2_5360000",
+          "ez": 4.9246,
+          "lp": 6.0729,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5310000:T:C",
+          "rsid": "rs_2_5310000",
+          "ez": 4.6056,
+          "lp": 5.3858,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5305000:T:C",
+          "rsid": "rs_2_5305000",
+          "ez": 4.4947,
+          "lp": 5.1569,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3540000:T:C",
+          "rsid": "rs_2_3540000",
+          "ez": 5.9036,
+          "lp": 8.4487,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5365000:T:C",
+          "rsid": "rs_2_5365000",
+          "ez": 4.297,
+          "lp": 4.7614,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3500000:T:C",
+          "rsid": "rs_2_3500000",
+          "ez": 5.7713,
+          "lp": 8.1042,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5370000:T:C",
+          "rsid": "rs_2_5370000",
+          "ez": 4.1674,
+          "lp": 4.5112,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3545000:T:C",
+          "rsid": "rs_2_3545000",
+          "ez": 5.5566,
+          "lp": 7.5606,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:5300000:T:C",
+          "rsid": "rs_2_5300000",
+          "ez": 3.8374,
+          "lp": 3.9051,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        }
+      ]
+    },
+    "chr6_25500000_34000000_mhc": {
+      "region_type": "mhc",
+      "variants_matched": 20,
+      "pld_selected": {
+        "0.1": 2,
+        "0.01": 1,
+        "0.001": 1
+      },
+      "cs_count_rss": 1,
+      "cs_count_rrss": 1,
+      "converged_rss": true,
+      "converged_rrss": true,
+      "top_variants": [
+        {
+          "gwas_variant_id": "6:31248000:T:C",
+          "rsid": "rs_6_31248000",
+          "ez": 10.3485,
+          "lp": 24.371,
+          "pip_rss": 0.9999,
+          "pip_rrss": 0.9999,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "6:31254000:T:C",
+          "rsid": "rs_6_31254000",
+          "ez": 9.3882,
+          "lp": 20.2139,
+          "pip_rss": 0.0001,
+          "pip_rrss": 0.0001,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31242000:T:C",
+          "rsid": "rs_6_31242000",
+          "ez": 8.8266,
+          "lp": 17.9665,
+          "pip_rss": 1e-06,
+          "pip_rrss": 1e-06,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31236000:T:C",
+          "rsid": "rs_6_31236000",
+          "ez": 8.1171,
+          "lp": 15.321,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31260000:T:C",
+          "rsid": "rs_6_31260000",
+          "ez": 7.9101,
+          "lp": 14.5893,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31230000:T:C",
+          "rsid": "rs_6_31230000",
+          "ez": 7.1885,
+          "lp": 12.1834,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31266000:T:C",
+          "rsid": "rs_6_31266000",
+          "ez": 6.9078,
+          "lp": 11.3075,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31272000:T:C",
+          "rsid": "rs_6_31272000",
+          "ez": 6.6214,
+          "lp": 10.4487,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31224000:T:C",
+          "rsid": "rs_6_31224000",
+          "ez": 6.2128,
+          "lp": 9.2834,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31278000:T:C",
+          "rsid": "rs_6_31278000",
+          "ez": 5.6054,
+          "lp": 7.6823,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31218000:T:C",
+          "rsid": "rs_6_31218000",
+          "ez": 5.4824,
+          "lp": 7.3771,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31284000:T:C",
+          "rsid": "rs_6_31284000",
+          "ez": 4.9902,
+          "lp": 6.2195,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31212000:T:C",
+          "rsid": "rs_6_31212000",
+          "ez": 4.7167,
+          "lp": 5.6204,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31206000:T:C",
+          "rsid": "rs_6_31206000",
+          "ez": 4.4657,
+          "lp": 5.0979,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31290000:T:C",
+          "rsid": "rs_6_31290000",
+          "ez": 4.298,
+          "lp": 4.7636,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31296000:T:C",
+          "rsid": "rs_6_31296000",
+          "ez": 4.0518,
+          "lp": 4.2937,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31200000:T:C",
+          "rsid": "rs_6_31200000",
+          "ez": 3.836,
+          "lp": 3.9027,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31302000:T:C",
+          "rsid": "rs_6_31302000",
+          "ez": 3.32,
+          "lp": 3.0456,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31308000:T:C",
+          "rsid": "rs_6_31308000",
+          "ez": 2.99,
+          "lp": 2.5543,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "6:31314000:T:C",
+          "rsid": "rs_6_31314000",
+          "ez": 2.6204,
+          "lp": 2.0563,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        }
+      ]
+    },
+    "cis_GENEA_chr1_2000000_4050000": {
+      "region_type": "cis_gene",
+      "variants_matched": 25,
+      "pld_selected": {
+        "0.1": 2,
+        "0.01": 1,
+        "0.001": 1
+      },
+      "cs_count_rss": 2,
+      "cs_count_rrss": 2,
+      "converged_rss": true,
+      "converged_rrss": true,
+      "top_variants": [
+        {
+          "gwas_variant_id": "1:2992000:T:C",
+          "rsid": "rs_1_2992000",
+          "ez": 11.9337,
+          "lp": 32.1015,
+          "pip_rss": 0.9924,
+          "pip_rrss": 0.9924,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "1:3052000:T:C",
+          "rsid": "rs_1_3052000",
+          "ez": 10.6887,
+          "lp": 25.939,
+          "pip_rss": 0.66,
+          "pip_rrss": 0.6599,
+          "cs_rss": "L2",
+          "cs_rrss": "L2"
+        },
+        {
+          "gwas_variant_id": "1:3048000:T:C",
+          "rsid": "rs_1_3048000",
+          "ez": 10.7494,
+          "lp": 26.2242,
+          "pip_rss": 0.1723,
+          "pip_rrss": 0.1723,
+          "cs_rss": "L2",
+          "cs_rrss": "L2"
+        },
+        {
+          "gwas_variant_id": "1:3056000:T:C",
+          "rsid": "rs_1_3056000",
+          "ez": 10.2735,
+          "lp": 24.0322,
+          "pip_rss": 0.1544,
+          "pip_rrss": 0.1544,
+          "cs_rss": "L2",
+          "cs_rrss": "L2"
+        },
+        {
+          "gwas_variant_id": "1:3044000:T:C",
+          "rsid": "rs_1_3044000",
+          "ez": 10.648,
+          "lp": 25.7484,
+          "pip_rss": 0.0126,
+          "pip_rrss": 0.0126,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:2988000:T:C",
+          "rsid": "rs_1_2988000",
+          "ez": 11.1967,
+          "lp": 28.3732,
+          "pip_rss": 0.0061,
+          "pip_rrss": 0.0061,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:2996000:T:C",
+          "rsid": "rs_1_2996000",
+          "ez": 11.4049,
+          "lp": 29.4029,
+          "pip_rss": 0.0015,
+          "pip_rrss": 0.0015,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3060000:T:C",
+          "rsid": "rs_1_3060000",
+          "ez": 9.2184,
+          "lp": 19.5202,
+          "pip_rss": 0.0004,
+          "pip_rrss": 0.0004,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3064000:T:C",
+          "rsid": "rs_1_3064000",
+          "ez": 8.9786,
+          "lp": 18.5617,
+          "pip_rss": 0.0003,
+          "pip_rrss": 0.0003,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3040000:T:C",
+          "rsid": "rs_1_3040000",
+          "ez": 10.0095,
+          "lp": 22.8579,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3000000:T:C",
+          "rsid": "rs_1_3000000",
+          "ez": 11.1452,
+          "lp": 28.1214,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3036000:T:C",
+          "rsid": "rs_1_3036000",
+          "ez": 9.989,
+          "lp": 22.7682,
+          "pip_rss": 4e-06,
+          "pip_rrss": 4e-06,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3068000:T:C",
+          "rsid": "rs_1_3068000",
+          "ez": 8.0822,
+          "lp": 15.1962,
+          "pip_rss": 3e-06,
+          "pip_rrss": 3e-06,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:2984000:T:C",
+          "rsid": "rs_1_2984000",
+          "ez": 10.095,
+          "lp": 23.2355,
+          "pip_rss": 2e-06,
+          "pip_rrss": 2e-06,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:2980000:T:C",
+          "rsid": "rs_1_2980000",
+          "ez": 9.6227,
+          "lp": 21.1924,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3032000:T:C",
+          "rsid": "rs_1_3032000",
+          "ez": 9.733,
+          "lp": 21.661,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3072000:T:C",
+          "rsid": "rs_1_3072000",
+          "ez": 7.3691,
+          "lp": 12.7649,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3004000:T:C",
+          "rsid": "rs_1_3004000",
+          "ez": 10.6889,
+          "lp": 25.9397,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3028000:T:C",
+          "rsid": "rs_1_3028000",
+          "ez": 9.9844,
+          "lp": 22.7485,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3076000:T:C",
+          "rsid": "rs_1_3076000",
+          "ez": 6.8219,
+          "lp": 11.0465,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3024000:T:C",
+          "rsid": "rs_1_3024000",
+          "ez": 9.666,
+          "lp": 21.3759,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3008000:T:C",
+          "rsid": "rs_1_3008000",
+          "ez": 10.3084,
+          "lp": 24.1896,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3020000:T:C",
+          "rsid": "rs_1_3020000",
+          "ez": 9.7368,
+          "lp": 21.677,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3012000:T:C",
+          "rsid": "rs_1_3012000",
+          "ez": 10.352,
+          "lp": 24.3872,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:3016000:T:C",
+          "rsid": "rs_1_3016000",
+          "ez": 9.5404,
+          "lp": 20.8462,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        }
+      ]
+    }
+  }
+}

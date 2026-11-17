@@ -44,6 +44,7 @@ def collect_runs(outdir: Path) -> list[dict[str, Any]]:
             "gwas_id": prov.get("gwas_id", ""),
             "trait": prov.get("trait") or meta.get("phenotype") or prov.get("gwas_id", ""),
             "ld_pop": prov.get("ld_population", ""),
+            "ancestry_ld_status": qc.get("ancestry_ld_status") or prov.get("ancestry_ld_status") or "",
             "status": qc.get("overall_status", "UNKNOWN"),
             "sig_variants": qc.get("genomewide_significant_variants", 0),
             "regions": qc.get("analyzed_regions_count", 0),
@@ -79,13 +80,16 @@ def render_manifest_html(outdir: Path) -> Path:
             if r["rel_report"]
             else f'<code>{html.escape(r["gwas_id"])}</code>'
         )
+        status_cell = badge(str(r["status"]), tone)
+        if r.get("ancestry_ld_status") == "multi_ancestry_gwas_single_panel_ld":
+            status_cell += " " + badge(f"ALL->{r['ld_pop']} LD", "warn")
         rows_html.append(
             "<tr>"
             f"<td><code>{html.escape(str(r['study_id']))}</code></td>"
             f"<td>{link}</td>"
             f"<td>{html.escape(str(r['trait']))}</td>"
             f"<td><code>{html.escape(str(r['ld_pop']))}</code></td>"
-            f"<td>{badge(str(r['status']), tone)}</td>"
+            f"<td>{status_cell}</td>"
             f"<td class='num'>{r['sig_variants']:,}</td>"
             f"<td class='num'>{r['regions']:,}</td>"
             f"<td class='num'>{r['cs_rss']:,} / {r['cs_rrss']:,}</td>"

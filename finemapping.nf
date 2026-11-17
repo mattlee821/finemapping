@@ -1,81 +1,110 @@
 nextflow.enable.dsl = 2
 
-process FINEMAP_ONE_GWAS {
-    tag "${study_id}/${gwas_id}"
-    publishDir "${params.outdir}", mode: 'copy', overwrite: true
+// Mirrors GWASprocessing/pipeline/main.nf:
+// 1. PREPARE_MANIFEST discovers/validates inputs, skips complete rows via .finemap_state.tsv, and emits rows/*.json
+//    so phenotype labels and file paths are never interpolated into shell strings.
+// 2. FINEMAP_ROW processes one GWAS per task with fault isolation and copies task logs to <outdir>/<study>/logs/.
+// 3. UPDATE_STATE updates .finemap_state.tsv and renders <outdir>/manifest.html.
 
-    input:
-    tuple val(study_id), val(gwas_id), val(trait_label), val(ancestry_label), val(gene_id_label),
-          path(vcf), path(vcf_index),
-          val(has_metadata), path(metadata),
-          val(has_qc), path(qc),
-          path(chain), path(grch37_fasta), path(grch37_fai),
-          val(has_gene_annot), path(gene_annotation)
+def opt(String flag, def val) {
+    return (val != null && val.toString().trim() != '') ? "${flag} '${val}'" : ""
+}
+
+process PREPARE_MANIFEST {
+    tag "prepare-manifest"
+    cache false
+    publishDir "${params.log_root ?: params.outdir}", mode: 'copy', overwrite: true, pattern: 'run_manifest*'
 
     output:
-    path "${study_id}/${gwas_id}", emit: results
+    path 'run_manifest.tsv', emit: manifest
+    path 'run_manifest_summary.json', emit: summary
+    path 'rows/*.json', emit: rows, optional: true
 
     script:
-    def meta_arg = has_metadata ? "--metadata '${metadata}'" : ""
-    def qc_arg = has_qc ? "--qc '${qc}'" : ""
-    def gene_annot_arg = has_gene_annot ? "--gene-annotation '${gene_annotation}'" : ""
-    def trait_arg = trait_label ? "--trait '${trait_label}'" : ""
-    def anc_arg = ancestry_label ? "--ancestry '${ancestry_label}'" : ""
-    def gid_arg = gene_id_label ? "--gene-id '${gene_id_label}'" : ""
-    def panukb_arg = params.panukb_dir ? "--panukb-dir '${params.panukb_dir}'" : ""
-    def local_ld_arg = params.local_ld_panel ? "--local-ld-panel '${params.local_ld_panel}'" : ""
-    def ref_n_arg = params.reference_sample_size ? "--reference-sample-size ${params.reference_sample_size}" : ""
-    def eff_n_arg = params.effective_n ? "--effective-n ${params.effective_n}" : ""
-    def cis_lp_arg = params.cis_significance_lp ? "--cis-significance-lp ${params.cis_significance_lp}" : ""
-    def mhc_arg = params.exclude_mhc.toString().toBoolean() ? "--exclude-mhc" : ""
-    def keep_arg = params.keep_intermediates.toString().toBoolean() ? "--keep-intermediates" : ""
     """
-    python3 '${projectDir}/scripts/run_finemapping.py' \\
-      --vcf '${vcf}' \\
-      --study-id '${study_id}' \\
-      --gwas-id '${gwas_id}' \\
-      ${meta_arg} \\
-      ${qc_arg} \\
-      ${trait_arg} \\
-      ${anc_arg} \\
-      ${gid_arg} \\
-      --chain '${chain}' \\
-      --grch37-fasta '${grch37_fasta}' \\
-      ${gene_annot_arg} \\
-      ${panukb_arg} \\
-      ${local_ld_arg} \\
-      --output-root . \\
+    python3 '${projectDir}/scripts/prepare_manifest.py' prepare \\
+      ${opt('--input-dir', params.input_dir)} \\
+      ${opt('--manifest', params.manifest)} \\
+      ${opt('--vcf', params.vcf)} \\
+      ${opt('--vcf-index', params.vcf_index)} \\
+      ${opt('--metadata', params.metadata)} \\
+      ${opt('--qc', params.qc)} \\
+      ${opt('--study-id', params.study_id)} \\
+      ${opt('--gwas-id', params.gwas_id)} \\
+      ${opt('--trait', params.trait)} \\
+      ${opt('--ancestry', params.ancestry)} \\
+      ${opt('--gene-id', params.gene_id)} \\
+      ${opt('--only-study', params.only_study)} \\
+      --outdir '${params.outdir}' \\
+      --state-file '${params.outdir}/.finemap_state.tsv' \\
+      --output run_manifest.tsv \\
+      --summary run_manifest_summary.json \\
+      --rows-dir rows \\
+      --chain '${params.chain}' \\
+      --grch37-fasta '${params.grch37_fasta}' \\
+      ${opt('--gene-annotation', params.gene_annotation)} \\
+      ${opt('--panukb-dir', params.panukb_dir)} \\
+      ${opt('--local-ld-panel', params.local_ld_panel)} \\
       --cache-dir '${params.cache_dir}' \\
       --population '${params.population}' \\
-      ${ref_n_arg} \\
-      ${eff_n_arg} \\
+      ${opt('--reference-sample-size', params.reference_sample_size)} \\
+      ${opt('--effective-n', params.effective_n)} \\
       --significance-lp '${params.significance_lp}' \\
-      ${cis_lp_arg} \\
+      ${opt('--cis-significance-lp', params.cis_significance_lp)} \\
       --region-flank-bp '${params.region_flank_bp}' \\
       --max-region-width-bp '${params.max_region_width_bp}' \\
-      --merge-distance-bp '${params.merge_distance_bp}' \\
       --gene-window-bp '${params.gene_window_bp}' \\
-      ${mhc_arg} \\
-      ${keep_arg} \\
+      --exclude-mhc '${params.exclude_mhc}' \\
       --max-loci '${params.max_loci}' \\
       --max-causal '${params.max_causal}' \\
-      --max-iter '${params.max_iter}'
+      --max-iter '${params.max_iter}' \\
+      --row-limit '${params.row_limit}' \\
+      --force '${params.force}' \\
+      --dry-run '${params.dry_run}' \\
+      --report '${params.report}' \\
+      --keep-intermediates '${params.keep_intermediates}' \\
+      --allow-ancestry-mismatch '${params.allow_ancestry_mismatch}'
     """
 }
 
-process RENDER_MANIFEST_REPORT {
-    tag "manifest_report"
+process FINEMAP_ROW {
+    tag "${row_json.baseName}"
+    cache false
+    afterScript "python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' || true"
 
     input:
-    val(completed_dirs)
-    val(outdir_str)
+    path row_json
 
     output:
-    val(true), emit: done
+    path '*.row_record.json', emit: records
 
     script:
     """
-    python3 '${projectDir}/scripts/render_manifest_report.py' --outdir '${outdir_str}'
+    python3 '${projectDir}/scripts/run_finemapping.py' \\
+      --row-json '${row_json}' \\
+      --output-record '${row_json.baseName}.row_record.json'
+    """
+}
+
+process UPDATE_STATE {
+    tag "update-state"
+    cache false
+    publishDir "${params.log_root ?: params.outdir}", mode: 'copy', overwrite: true
+
+    input:
+    path records
+
+    output:
+    path 'state_update_summary.json', emit: summary
+
+    script:
+    def rec_args = records ? "--records ${records}" : ""
+    """
+    python3 '${projectDir}/scripts/prepare_manifest.py' update-state \\
+      --state-file '${params.outdir}/.finemap_state.tsv' \\
+      --outdir '${params.outdir}' \\
+      --output state_update_summary.json \\
+      ${rec_args}
     """
 }
 
@@ -85,8 +114,8 @@ workflow {
     if (missing_ref) {
         error "Missing required parameter(s): ${missing_ref.collect { "--${it}" }.join(', ')}"
     }
-    if (!params.manifest && !params.vcf) {
-        error "Supply either --vcf <path> (with --study_id and --gwas_id) or --manifest <tsv>"
+    if (!params.input_dir && !params.manifest && !params.vcf) {
+        error "Supply one of --input_dir <dir>, --manifest <tsv>, or --vcf <path>"
     }
 
     def chain_file = new File(params.chain.toString()).canonicalFile
@@ -99,102 +128,13 @@ workflow {
         error "--grch37_fai must be the .fai index adjacent to --grch37_fasta"
     }
 
-    def has_gene = params.gene_annotation != null && params.gene_annotation.toString().trim() != ''
-    def gene_file = has_gene ? new File(params.gene_annotation.toString()).canonicalFile : chain_file
-    if (has_gene && !gene_file.isFile()) {
-        error "--gene_annotation file does not exist: ${gene_file}"
-    }
-
     def output_dir = new File(params.outdir.toString()).canonicalFile
     params.outdir = output_dir.toString()
     if (!output_dir.exists() && !output_dir.mkdirs()) {
         error "Could not create output directory: ${output_dir}"
     }
 
-    def records = []
-    if (params.manifest) {
-        def mf = new File(params.manifest.toString()).canonicalFile
-        if (!mf.isFile()) error "Manifest file does not exist: ${mf}"
-        def lines = mf.readLines().findAll { it.trim() && !it.trim().startsWith('#') }
-        if (lines.size() < 2) error "Manifest TSV has no data rows: ${mf}"
-        def header = lines[0].split('\t', -1).collect { it.trim() }
-        lines.drop(1).eachWithIndex { line, idx ->
-            def vals = line.split('\t', -1)
-            def row = [:]
-            header.eachWithIndex { col, c_i -> row[col] = c_i < vals.size() ? vals[c_i].trim() : '' }
-            def vcf_p = row.vcf ?: row.vcf_path
-            if (!vcf_p) error "Manifest row ${idx + 2} lacks 'vcf' column"
-            def vf = new File(vcf_p).canonicalFile
-            if (!vf.isFile()) error "VCF in manifest row ${idx + 2} not found: ${vf}"
-            def idx_p = row.vcf_index ?: (new File("${vf}.tbi").isFile() ? "${vf}.tbi" : "${vf}.csi")
-            def vidx = new File(idx_p).canonicalFile
-            if (!vidx.isFile()) error "Tabix/CSI index missing for ${vf}"
-
-            def s_id = row.study_id ?: params.study_id ?: 'study'
-            def g_id = row.gwas_id ?: row.output_id ?: vf.name.replaceAll(/\.vcf(\.gz|\.bgz)?$/, '')
-            def meta_cand = row.metadata ? new File(row.metadata) : new File(vf.parentFile, 'metadata.json')
-            def qc_cand = row.qc ? new File(row.qc) : new File(vf.parentFile, 'qc.json')
-            def has_m = meta_cand.isFile()
-            def has_q = qc_cand.isFile()
-
-            records << tuple(
-                s_id.toString(),
-                g_id.toString(),
-                (row.trait ?: '').toString(),
-                (row.ancestry ?: '').toString(),
-                (row.gene_id ?: row.uniprot_id ?: '').toString(),
-                file(vf),
-                file(vidx),
-                has_m,
-                file(has_m ? meta_cand.canonicalFile : vf),
-                has_q,
-                file(has_q ? qc_cand.canonicalFile : vf),
-                file(chain_file),
-                file(fasta_file),
-                file(fai_file),
-                has_gene,
-                file(gene_file)
-            )
-        }
-    } else {
-        if (!params.study_id || !params.gwas_id) {
-            error "Single-GWAS mode requires --study_id and --gwas_id"
-        }
-        def vf = new File(params.vcf.toString()).canonicalFile
-        if (!vf.isFile()) error "--vcf does not exist: ${vf}"
-        def idx_p = params.vcf_index ?: (new File("${vf}.tbi").isFile() ? "${vf}.tbi" : "${vf}.csi")
-        def vidx = new File(idx_p.toString()).canonicalFile
-        if (!vidx.isFile()) error "VCF index does not exist: ${vidx}"
-        if (vf.toPath().startsWith(output_dir.toPath())) {
-            error "Output directory must not contain input VCF: ${output_dir}"
-        }
-        def has_m = params.metadata != null && params.metadata.toString().trim() != ''
-        def mf = has_m ? new File(params.metadata.toString()).canonicalFile : vf
-        if (has_m && !mf.isFile()) error "--metadata does not exist: ${mf}"
-        def has_q = params.qc != null && params.qc.toString().trim() != ''
-        def qf = has_q ? new File(params.qc.toString()).canonicalFile : vf
-        if (has_q && !qf.isFile()) error "--qc does not exist: ${qf}"
-
-        records << tuple(
-            params.study_id.toString(),
-            params.gwas_id.toString(),
-            (params.trait ?: '').toString(),
-            (params.ancestry ?: '').toString(),
-            (params.gene_id ?: '').toString(),
-            file(vf),
-            file(vidx),
-            has_m,
-            file(mf),
-            has_q,
-            file(qf),
-            file(chain_file),
-            file(fasta_file),
-            file(fai_file),
-            has_gene,
-            file(gene_file)
-        )
-    }
-
-    def out_ch = FINEMAP_ONE_GWAS(Channel.fromList(records))
-    RENDER_MANIFEST_REPORT(out_ch.results.collect(), params.outdir)
+    PREPARE_MANIFEST()
+    def row_records = FINEMAP_ROW(PREPARE_MANIFEST.out.rows.flatten())
+    UPDATE_STATE(row_records.records.collect().ifEmpty([]))
 }

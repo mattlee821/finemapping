@@ -1,0 +1,177 @@
+{
+  "study_id": "cancer_synthetic",
+  "gwas_id": "colon_rectal_sim",
+  "overall_status": "PASS",
+  "ancestry_ld_status": "matched",
+  "genomewide_significant_variants": 10,
+  "analyzed_regions_count": 1,
+  "cis_status": "not_applicable",
+  "mhc_status": "no_significant_variants",
+  "regions": {
+    "chr2_2020000_5020000": {
+      "region_type": "lead_locus",
+      "variants_matched": 15,
+      "pld_selected": {
+        "0.1": 1,
+        "0.01": 1,
+        "0.001": 1
+      },
+      "cs_count_rss": 1,
+      "cs_count_rrss": 1,
+      "converged_rss": true,
+      "converged_rrss": true,
+      "top_variants": [
+        {
+          "gwas_variant_id": "2:3520000:T:C",
+          "rsid": "rs_2_3520000",
+          "ez": 8.916,
+          "lp": 18.3151,
+          "pip_rss": 0.9933,
+          "pip_rrss": 0.9933,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "2:3515000:T:C",
+          "rsid": "rs_2_3515000",
+          "ez": 8.2977,
+          "lp": 15.9739,
+          "pip_rss": 0.0054,
+          "pip_rrss": 0.0054,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3525000:T:C",
+          "rsid": "rs_2_3525000",
+          "ez": 8.1226,
+          "lp": 15.3404,
+          "pip_rss": 0.0013,
+          "pip_rrss": 0.0013,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3510000:T:C",
+          "rsid": "rs_2_3510000",
+          "ez": 7.4204,
+          "lp": 12.9328,
+          "pip_rss": 6e-06,
+          "pip_rrss": 6e-06,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3530000:T:C",
+          "rsid": "rs_2_3530000",
+          "ez": 7.3526,
+          "lp": 12.7108,
+          "pip_rss": 4e-06,
+          "pip_rrss": 4e-06,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3505000:T:C",
+          "rsid": "rs_2_3505000",
+          "ez": 6.7555,
+          "lp": 10.8465,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3535000:T:C",
+          "rsid": "rs_2_3535000",
+          "ez": 6.702,
+          "lp": 10.6868,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3540000:T:C",
+          "rsid": "rs_2_3540000",
+          "ez": 6.1966,
+          "lp": 9.2386,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3500000:T:C",
+          "rsid": "rs_2_3500000",
+          "ez": 5.9323,
+          "lp": 8.5245,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3545000:T:C",
+          "rsid": "rs_2_3545000",
+          "ez": 5.7587,
+          "lp": 8.0718,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3550000:T:C",
+          "rsid": "rs_2_3550000",
+          "ez": 4.6971,
+          "lp": 5.5785,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3555000:T:C",
+          "rsid": "rs_2_3555000",
+          "ez": 4.5392,
+          "lp": 5.2483,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3560000:T:C",
+          "rsid": "rs_2_3560000",
+          "ez": 4.1485,
+          "lp": 4.4753,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3565000:T:C",
+          "rsid": "rs_2_3565000",
+          "ez": 3.7766,
+          "lp": 3.7985,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "2:3570000:T:C",
+          "rsid": "rs_2_3570000",
+          "ez": 3.1383,
+          "lp": 2.7697,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "cs_rss": "",
+          "cs_rrss": ""
+        }
+      ]
+    }
+  }
+}

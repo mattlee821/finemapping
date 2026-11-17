@@ -13,7 +13,7 @@
 if [[ -n "${BASH_VERSION:-}" ]]; then
   _GWASFM_SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 elif [[ -n "${ZSH_VERSION:-}" ]]; then
-  _GWASFM_SRC_DIR="$(cd "$(dirname "${(%):-%x}")" && pwd)"
+  _GWASFM_SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 else
   _GWASFM_SRC_DIR="$(pwd)/scripts"
 fi

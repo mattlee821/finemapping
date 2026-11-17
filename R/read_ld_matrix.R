@@ -62,7 +62,8 @@ read_npy_float64_matrix <- function(npy_path) {
   }
 
   if (fortran_order) {
-    matrix(values, nrow = dims[[1L]], ncol = dims[[2L]], byrow = FALSE)
+    dim(values) <- c(dims[[1L]], dims[[2L]])
+    values
   } else {
     matrix(values, nrow = dims[[1L]], ncol = dims[[2L]], byrow = TRUE)
   }

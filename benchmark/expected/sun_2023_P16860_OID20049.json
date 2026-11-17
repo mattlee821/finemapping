@@ -1,0 +1,542 @@
+{
+  "study_id": "sun_2023_37794186",
+  "gwas_id": "P16860_OID20049",
+  "overall_status": "PASS",
+  "ancestry_ld_status": "multi_ancestry_gwas_single_panel_ld",
+  "genomewide_significant_variants": 953,
+  "analyzed_regions_count": 2,
+  "cis_status": "activated",
+  "mhc_status": "no_significant_variants",
+  "regions": {
+    "chr10_118174163_121174163": {
+      "region_type": "lead_locus",
+      "variants_matched": 22656,
+      "pld_selected": {
+        "0.1": 2106,
+        "0.01": 847,
+        "0.001": 443
+      },
+      "cs_count_rss": 1,
+      "cs_count_rrss": 1,
+      "converged_rss": true,
+      "converged_rrss": true,
+      "top_variants": [
+        {
+          "gwas_variant_id": "10:119674163:C:T",
+          "rsid": "rs72842207",
+          "ez": 9.6002,
+          "lp": 21.0981,
+          "pip_rss": 0.2045,
+          "pip_rrss": 0.2045,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "10:119667372:C:T",
+          "rsid": "rs17617337",
+          "ez": 9.594,
+          "lp": 21.0721,
+          "pip_rss": 0.1929,
+          "pip_rrss": 0.1929,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "10:119670121:T:C",
+          "rsid": "rs2234962",
+          "ez": 9.5876,
+          "lp": 21.0452,
+          "pip_rss": 0.1816,
+          "pip_rrss": 0.1816,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "10:119665450:A:T",
+          "rsid": "rs117550412",
+          "ez": 9.5867,
+          "lp": 21.0412,
+          "pip_rss": 0.18,
+          "pip_rrss": 0.18,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "10:119663324:G:C",
+          "rsid": "rs61869036",
+          "ez": 9.5643,
+          "lp": 20.9472,
+          "pip_rss": 0.1458,
+          "pip_rrss": 0.1458,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "10:119665303:A:AT",
+          "rsid": ".",
+          "ez": 9.4698,
+          "lp": 20.5521,
+          "pip_rss": 0.0603,
+          "pip_rrss": 0.0603,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "10:119656173:G:A",
+          "rsid": "rs72840788",
+          "ez": 9.417,
+          "lp": 20.3333,
+          "pip_rss": 0.037,
+          "pip_rrss": 0.037,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:119996289:A:AT",
+          "rsid": ".",
+          "ez": -3.8065,
+          "lp": 3.8509,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:120009764:G:GT",
+          "rsid": "rs111983771",
+          "ez": -3.7712,
+          "lp": 3.7892,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:120005938:AT:A",
+          "rsid": "rs539793919",
+          "ez": -3.7289,
+          "lp": 3.716,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:120005940:G:C",
+          "rsid": "rs569383377",
+          "ez": -3.7289,
+          "lp": 3.716,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:120005941:TGACAA:T",
+          "rsid": "rs543685060",
+          "ez": -3.7289,
+          "lp": 3.716,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:120005005:C:G",
+          "rsid": "rs35287361",
+          "ez": -3.6032,
+          "lp": 3.5026,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:119682507:CGGA:C",
+          "rsid": "rs148674824",
+          "ez": -4.2844,
+          "lp": 4.737,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:119997648:G:A",
+          "rsid": "rs61745284",
+          "ez": -3.5586,
+          "lp": 3.4285,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:120110246:T:C",
+          "rsid": "rs7907529",
+          "ez": -3.4611,
+          "lp": 3.2693,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:119681016:C:T",
+          "rsid": "rs112029",
+          "ez": -5.581,
+          "lp": 7.6214,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:119698175:G:A",
+          "rsid": "rs77127585",
+          "ez": -4.0476,
+          "lp": 4.2861,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:119995430:C:T",
+          "rsid": "rs142021362",
+          "ez": -3.3696,
+          "lp": 3.1233,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:118444820:G:A",
+          "rsid": "rs12250969",
+          "ez": 3.2066,
+          "lp": 2.8719,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:118918483:A:C",
+          "rsid": "rs112110672",
+          "ez": 3.2345,
+          "lp": 2.9142,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:118778645:G:A",
+          "rsid": "rs568396425",
+          "ez": -3.2231,
+          "lp": 2.8969,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:120670349:A:G",
+          "rsid": "rs540075630",
+          "ez": 3.2349,
+          "lp": 2.9148,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:118180343:G:A",
+          "rsid": "rs77392930",
+          "ez": 3.1934,
+          "lp": 2.852,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "10:119452751:C:T",
+          "rsid": "rs149159651",
+          "ez": 3.028,
+          "lp": 2.6087,
+          "pip_rss": 0.0005,
+          "pip_rrss": 0.0005,
+          "cs_rss": "",
+          "cs_rrss": ""
+        }
+      ]
+    },
+    "cis_NPPB_chr1_10857464_12858945": {
+      "region_type": "cis_gene",
+      "variants_matched": 13215,
+      "pld_selected": {
+        "0.1": 1247,
+        "0.01": 577,
+        "0.001": 327
+      },
+      "cs_count_rss": 3,
+      "cs_count_rrss": 3,
+      "converged_rss": true,
+      "converged_rrss": true,
+      "top_variants": [
+        {
+          "gwas_variant_id": "1:11848089:C:G",
+          "rsid": "rs41300100",
+          "ez": 13.2534,
+          "lp": 39.3649,
+          "pip_rss": 0.8842,
+          "pip_rrss": 0.8832,
+          "cs_rss": "L2",
+          "cs_rrss": "L2"
+        },
+        {
+          "gwas_variant_id": "1:11859214:A:G",
+          "rsid": "rs198389",
+          "ez": 29.1925,
+          "lp": 186.617,
+          "pip_rss": 0.8628,
+          "pip_rrss": 0.8627,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "1:11855410:T:C",
+          "rsid": "rs198379",
+          "ez": 29.1477,
+          "lp": 186.049,
+          "pip_rss": 0.1376,
+          "pip_rrss": 0.1377,
+          "cs_rss": "L1",
+          "cs_rrss": "L1"
+        },
+        {
+          "gwas_variant_id": "1:11871388:C:T",
+          "rsid": "rs75030554",
+          "ez": 16.2257,
+          "lp": 58.4793,
+          "pip_rss": 0.1212,
+          "pip_rrss": 0.121,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11857561:A:AT",
+          "rsid": ".",
+          "ez": 16.4067,
+          "lp": 59.7661,
+          "pip_rss": 0.1145,
+          "pip_rrss": 0.1144,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11871715:C:T",
+          "rsid": "rs116525098",
+          "ez": 16.2046,
+          "lp": 58.3298,
+          "pip_rss": 0.108,
+          "pip_rrss": 0.1079,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11967840:C:T",
+          "rsid": "rs568527924",
+          "ez": 12.1951,
+          "lp": 33.4812,
+          "pip_rss": 0.0945,
+          "pip_rrss": 0.0953,
+          "cs_rss": "L2",
+          "cs_rrss": "L2"
+        },
+        {
+          "gwas_variant_id": "1:11869704:T:C",
+          "rsid": "rs77012921",
+          "ez": 16.1675,
+          "lp": 58.0685,
+          "pip_rss": 0.0832,
+          "pip_rrss": 0.0832,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11866701:C:T",
+          "rsid": "rs74714707",
+          "ez": 16.1296,
+          "lp": 57.8013,
+          "pip_rss": 0.0801,
+          "pip_rrss": 0.08,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11864634:T:TTC",
+          "rsid": ".",
+          "ez": 16.2354,
+          "lp": 58.5481,
+          "pip_rss": 0.0747,
+          "pip_rrss": 0.0747,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11866841:G:T",
+          "rsid": "rs75540316",
+          "ez": 16.1575,
+          "lp": 57.9974,
+          "pip_rss": 0.0733,
+          "pip_rrss": 0.0733,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11866690:T:G",
+          "rsid": "rs77003042",
+          "ez": 16.1557,
+          "lp": 57.9848,
+          "pip_rss": 0.0727,
+          "pip_rrss": 0.0727,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11863973:T:C",
+          "rsid": "rs79712000",
+          "ez": 16.1542,
+          "lp": 57.9743,
+          "pip_rss": 0.059,
+          "pip_rrss": 0.059,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11867821:T:C",
+          "rsid": "rs79653311",
+          "ez": 16.0854,
+          "lp": 57.4909,
+          "pip_rss": 0.0499,
+          "pip_rrss": 0.0499,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11872790:T:A",
+          "rsid": "rs79837245",
+          "ez": 16.0275,
+          "lp": 57.0857,
+          "pip_rss": 0.0329,
+          "pip_rrss": 0.033,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11824090:T:C",
+          "rsid": "rs2076003",
+          "ez": 15.4129,
+          "lp": 52.8732,
+          "pip_rss": 0.0246,
+          "pip_rrss": 0.0247,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:11974307:C:T",
+          "rsid": "rs114224592",
+          "ez": 11.9296,
+          "lp": 32.0811,
+          "pip_rss": 0.0219,
+          "pip_rrss": 0.0222,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:12118597:A:G",
+          "rsid": "rs11809684",
+          "ez": -3.7842,
+          "lp": 3.8119,
+          "pip_rss": 0.0143,
+          "pip_rrss": 0.0139,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:12119513:T:G",
+          "rsid": "rs75033954",
+          "ez": -3.762,
+          "lp": 3.7733,
+          "pip_rss": 0.0137,
+          "pip_rrss": 0.0133,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:11837701:G:A",
+          "rsid": "rs2075539",
+          "ez": 15.2994,
+          "lp": 52.1127,
+          "pip_rss": 0.013,
+          "pip_rrss": 0.0131,
+          "cs_rss": "L3",
+          "cs_rrss": "L3"
+        },
+        {
+          "gwas_variant_id": "1:12118591:G:C",
+          "rsid": "rs11811120",
+          "ez": -3.7124,
+          "lp": 3.6875,
+          "pip_rss": 0.0124,
+          "pip_rrss": 0.0122,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:12124691:G:A",
+          "rsid": "rs112543016",
+          "ez": -3.6914,
+          "lp": 3.6516,
+          "pip_rss": 0.0113,
+          "pip_rrss": 0.011,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:12581795:G:T",
+          "rsid": "rs187147130",
+          "ez": -4.4047,
+          "lp": 4.9751,
+          "pip_rss": 0.0107,
+          "pip_rrss": 0.0105,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:11904981:G:A",
+          "rsid": "rs74956939",
+          "ez": -3.3757,
+          "lp": 3.133,
+          "pip_rss": 0.0097,
+          "pip_rrss": 0.0094,
+          "cs_rss": "",
+          "cs_rrss": ""
+        },
+        {
+          "gwas_variant_id": "1:12508474:G:C",
+          "rsid": "rs182195942",
+          "ez": -4.4015,
+          "lp": 4.9685,
+          "pip_rss": 0.0096,
+          "pip_rrss": 0.0094,
+          "cs_rss": "",
+          "cs_rrss": ""
+        }
+      ]
+    }
+  }
+}

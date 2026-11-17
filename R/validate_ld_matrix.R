@@ -34,17 +34,35 @@ validate_ld_matrix <- function(R, variant_ids = NULL, check_psd = FALSE,
     stop("LD variant order does not match the supplied variant order.",
          call. = FALSE)
   }
-  if (any(!is.finite(R))) {
+  if (anyNA(R)) {
     stop("LD contains missing or non-finite values; unavailable LD is not zero.",
          call. = FALSE)
   }
-  if (max(abs(R - t(R))) > tolerance) {
+  rng <- range(R)
+  if (!all(is.finite(rng))) {
+    stop("LD contains missing or non-finite values; unavailable LD is not zero.",
+         call. = FALSE)
+  }
+  p_dim <- nrow(R)
+  if (p_dim <= 1024L) {
+    sym_err <- max(abs(R - t(R)))
+  } else {
+    sym_err <- 0
+    block <- 512L
+    for (b in seq.int(1L, p_dim, by = block)) {
+      idx <- b:min(p_dim, b + block - 1L)
+      err_b <- max(abs(R[idx, , drop = FALSE] - t(R[, idx, drop = FALSE])))
+      if (err_b > sym_err) sym_err <- err_b
+      if (sym_err > tolerance) break
+    }
+  }
+  if (sym_err > tolerance) {
     stop("LD matrix is not symmetric within tolerance.", call. = FALSE)
   }
   if (any(abs(diag(R) - 1) > tolerance)) {
     stop("LD diagonal values must be approximately 1.", call. = FALSE)
   }
-  if (any(abs(R) > 1 + tolerance)) {
+  if (rng[[1L]] < -(1 + tolerance) || rng[[2L]] > (1 + tolerance)) {
     stop("LD correlations must be within [-1, 1].", call. = FALSE)
   }
 

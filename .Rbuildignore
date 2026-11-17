@@ -1,8 +1,21 @@
 ^environment\.yml$
+^requirements-tools\.txt$
+^Dockerfile$
 ^renv\.lock$
 ^archive$
-^docs/papers$
+^benchmark$
+^conf$
+^config$
+^docs$
+^scripts$
+^temp$
+^finemapping\.nf$
+^main\.nf$
+^nextflow\.config$
+^update\.md$
+^\.licenses$
 ^\.git$
+^\.gitignore$
 ^\.DS_Store$
 ^.*\.DS_Store$
 ^\.nextflow$
@@ -14,3 +27,4 @@
 ^renv$
 ^\.Rprofile$
 ^\.pytest_cache$
+^tests/python$

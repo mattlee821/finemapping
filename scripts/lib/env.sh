@@ -5,7 +5,7 @@
 if [[ -n "${BASH_VERSION:-}" ]]; then
   GWASFM_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 elif [[ -n "${ZSH_VERSION:-}" ]]; then
-  GWASFM_LIB_DIR="$(cd "$(dirname "${(%):-%x}")" && pwd)"
+  GWASFM_LIB_DIR="$(cd "$(dirname "$0")" && pwd)"
 else
   GWASFM_LIB_DIR="$(pwd)/scripts/lib"
 fi
@@ -77,6 +77,7 @@ gwasfm_activate_runtime() {
   gwasfm_resolve_paths
   export PYTHONNOUSERSITE=1
   export RENV_CONFIG_SYNCHRONIZED_CHECK=FALSE
+  export R_MAX_VSIZE="${R_MAX_VSIZE:-64Gb}"
 
   if gwasfm_in_container; then
     export GWASFM_IN_CONTAINER=1
@@ -107,4 +108,38 @@ gwasfm_activate_runtime() {
   if [[ -z "${GWASFM_CONTAINER_IMAGE:-}" && -f "${GWASFM_TOOLS_ROOT}/gwasfinemapping.sif" ]]; then
     export GWASFM_CONTAINER_IMAGE="${GWASFM_TOOLS_ROOT}/gwasfinemapping.sif"
   fi
+}
+
+gwasfm_in_container_exec() {
+  gwasfm_resolve_paths
+  local engine="${GWASFM_CONTAINER:-apptainer}"
+  local image="${GWASFM_CONTAINER_IMAGE:-${GWASFM_CONTAINER_REF:-ghcr.io/mattlee821/finemapping:latest}}"
+  case "$engine" in
+    docker)
+      docker run --rm \
+        -e GWASFM_IN_CONTAINER=1 \
+        -e NXF_HOME=/tmp/gwasfm-nxf-home \
+        -v "${GWASFM_ROOT}:${GWASFM_ROOT}" \
+        -v "${GWASFM_REFERENCE_ROOT}:${GWASFM_REFERENCE_ROOT}" \
+        -v "${GWASFM_CACHE_DIR}:${GWASFM_CACHE_DIR}" \
+        -w "${GWASFM_ROOT}" \
+        "$image" "$@"
+      ;;
+    apptainer|singularity)
+      local bin
+      bin="$(command -v apptainer || command -v singularity)"
+      "$bin" exec \
+        --env GWASFM_IN_CONTAINER=1 \
+        --env NXF_HOME=/tmp/gwasfm-nxf-home \
+        --bind "${GWASFM_ROOT}:${GWASFM_ROOT}" \
+        --bind "${GWASFM_REFERENCE_ROOT}:${GWASFM_REFERENCE_ROOT}" \
+        --bind "${GWASFM_CACHE_DIR}:${GWASFM_CACHE_DIR}" \
+        --pwd "${GWASFM_ROOT}" \
+        "$image" "$@"
+      ;;
+    *)
+      echo "Unsupported GWASFM_CONTAINER engine: $engine (expected docker or apptainer)" >&2
+      return 2
+      ;;
+  esac
 }

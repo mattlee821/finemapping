@@ -818,6 +818,7 @@ def run_checked(command: list[str], env: dict[str, str] | None = None,
 def r_runtime_environment(project_root: Path) -> dict[str, str]:
     environment = os.environ.copy()
     environment.setdefault("RENV_CONFIG_SYNCHRONIZED_CHECK", "FALSE")
+    environment.setdefault("R_MAX_VSIZE", "64Gb")
     if environment.get("GWASFM_IN_CONTAINER") == "1":
         return environment
     tools_root = Path(
@@ -888,14 +889,69 @@ def write_lifted_vcf(records: list[dict[str, Any]], lifter: Any,
     return lifted_by_id, excluded
 
 
+def _load_fai_index(fasta: Path) -> dict[str, tuple[int, int, int, int]]:
+    fai = Path(f"{fasta}.fai")
+    if not fai.is_file():
+        return {}
+    index: dict[str, tuple[int, int, int, int]] = {}
+    for line in fai.read_text(encoding="utf-8").splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 5:
+            index[parts[0]] = (int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]))
+    return index
+
+
+def _fetch_fasta_bases(fh: Any, fai_entry: tuple[int, int, int, int],
+                       pos_1based: int, length: int) -> str:
+    seq_len, offset, line_bases, line_width = fai_entry
+    if pos_1based < 1 or pos_1based + length - 1 > seq_len:
+        return ""
+    zero_pos = pos_1based - 1
+    out: list[str] = []
+    remaining = length
+    cur = zero_pos
+    while remaining > 0:
+        line_idx, col_idx = divmod(cur, line_bases)
+        take = min(remaining, line_bases - col_idx)
+        byte_pos = offset + line_idx * line_width + col_idx
+        fh.seek(byte_pos)
+        out.append(fh.read(take).decode("ascii", errors="ignore").upper())
+        cur += take
+        remaining -= take
+    return "".join(out)
+
+
 def normalize_lifted_vcf(vcf: Path, fasta: Path,
                          output_path: Path | None = None
                          ) -> list[dict[str, Any]]:
+    fai_map = _load_fai_index(fasta)
+    pre_swapped_ids: set[str] = set()
     with tempfile.TemporaryDirectory(prefix="gwasfm-normalize-") as directory:
+        norm_input = vcf
+        if fai_map:
+            adjusted_vcf = Path(directory) / "pre_norm.vcf"
+            with fasta.open("rb") as fasta_fh, vcf.open("r", encoding="utf-8") as src, adjusted_vcf.open("w", encoding="utf-8") as dst:
+                for line in src:
+                    if line.startswith("#"):
+                        dst.write(line)
+                        continue
+                    cols = line.rstrip("\n").split("\t")
+                    chrom, pos_s, uid, ref, alt = cols[0], cols[1], cols[2], cols[3], cols[4]
+                    if len(ref) != len(alt) and chrom in fai_map:
+                        pos_i = int(pos_s)
+                        max_l = max(len(ref), len(alt))
+                        ref_seq = _fetch_fasta_bases(fasta_fh, fai_map[chrom], pos_i, max_l)
+                        if ref_seq and not ref_seq.startswith(ref) and ref_seq.startswith(alt):
+                            cols[3], cols[4] = alt, ref
+                            pre_swapped_ids.add(uid)
+                            line = "\t".join(cols) + "\n"
+                    dst.write(line)
+            norm_input = adjusted_vcf
+
         normalized = Path(directory) / "normalized.vcf"
         run_checked([
             "bcftools", "norm", "-f", str(fasta), "-c", "w", "-Ov",
-            "-o", str(normalized), str(vcf),
+            "-o", str(normalized), str(norm_input),
         ])
         result = run_checked([
             "bcftools", "query", "-f",
@@ -904,8 +960,12 @@ def normalize_lifted_vcf(vcf: Path, fasta: Path,
             str(normalized),
         ])
     rows = []
+    fai_checked = bool(fai_map)
     for line in result.stdout.splitlines():
         chrom, pos, unique_id, ref, alt, es, se, lp, ss = line.split("\t")
+        was_pre_swapped = unique_id in pre_swapped_ids
+        if was_pre_swapped:
+            ref, alt = alt, ref
         rows.append({
             "source_variant_key": unique_id,
             "LD_CHROM": normalize_chromosome(chrom),
@@ -916,6 +976,8 @@ def normalize_lifted_vcf(vcf: Path, fasta: Path,
             "SE": numeric(se),
             "LP": numeric(lp),
             "SS": numeric(ss),
+            "PRE_SWAPPED": was_pre_swapped,
+            "FAI_CHECKED": fai_checked,
         })
     if output_path is not None:
         write_tsv(
@@ -925,6 +987,43 @@ def normalize_lifted_vcf(vcf: Path, fasta: Path,
              "ES", "SE", "LP", "SS"],
         )
     return rows
+
+
+def match_panel_variants(index_path: Path, normalized: list[dict[str, Any]]) -> Any:
+    """Vectorized VariantIndex lookup; prevents non-swapped tandem-repeat indels from cross-matching."""
+    import numpy as np
+    import pandas as pd
+    from ldcov.io.variant_index import VariantIndex
+
+    n = len(normalized)
+    if n == 0:
+        return pd.DataFrame({"idx": np.empty(0, dtype=np.int64), "flip": np.empty(0, dtype=bool)})
+
+    vi = VariantIndex(str(index_path))
+    candidates = pd.DataFrame({
+        "contig": [row["LD_CHROM"] for row in normalized],
+        "position": [row["LD_POS"] for row in normalized],
+        "ref": [row["LD_REF"] for row in normalized],
+        "alt": [row["LD_ALT"] for row in normalized],
+    })
+    swap_mask = np.array([
+        len(row["LD_REF"]) == len(row["LD_ALT"])
+        or bool(row.get("PRE_SWAPPED", False))
+        or not bool(row.get("FAI_CHECKED", False))
+        for row in normalized
+    ], dtype=bool)
+
+    idx_out = np.full(n, -1, dtype=np.int64)
+    flip_out = np.zeros(n, dtype=bool)
+    if np.any(swap_mask):
+        res_swap = vi.match_variants(candidates.loc[swap_mask], allow_allele_swap=True)
+        idx_out[swap_mask] = res_swap["idx"].to_numpy()
+        flip_out[swap_mask] = res_swap["flip"].to_numpy()
+    if np.any(~swap_mask):
+        res_exact = vi.match_variants(candidates.loc[~swap_mask], allow_allele_swap=False)
+        idx_out[~swap_mask] = res_exact["idx"].to_numpy()
+        flip_out[~swap_mask] = res_exact["flip"].to_numpy()
+    return pd.DataFrame({"idx": idx_out, "flip": flip_out})
 
 
 def resolve_panel_matches(normalized: list[dict[str, Any]], matches: Any
@@ -1074,7 +1173,7 @@ def _validate_and_normalize_extracted_ld(
         "max_abs_asymmetry": max_asym,
         "missing_cells": 0,
     }
-    return np.ascontiguousarray(normalized, dtype="<f8"), ids, indexes, summary
+    return np.asfortranarray(normalized, dtype="<f8"), ids, indexes, summary
 
 
 def matrix_to_npy(npz_path: Path, variants_path: Path, output_npy_path: Path
@@ -1109,6 +1208,45 @@ def matrix_to_tsv(npz_path: Path, variants_path: Path, output_path: Path
         for variant_id, row in zip(ids, normalized):
             writer.writerow([variant_id, *(f"{value:.12g}" for value in row)])
     return summary
+
+
+def extract_ld_from_blockmatrix(
+    bm_path: str,
+    matched_rows: list[dict[str, Any]],
+    ld_prefix: Path,
+    block_cache: int = 2,
+    fetch_workers: int = 2,
+    storage_options: dict[str, Any] | None = None,
+) -> None:
+    """Extract submatrix from Pan-UKB Hail BlockMatrix using pre-resolved PANEL_IDX + PANEL_ALLELE_SWAPPED."""
+    import numpy as np
+    import pandas as pd
+    from ldcov.io.blockmatrix.reader import HailBlockMatrixReader
+    from ldcov.ld_bm.extract import _apply_flips, _assemble
+
+    global_idxs = [int(row["PANEL_IDX"]) for row in matched_rows]
+    if len(set(global_idxs)) != len(global_idxs):
+        raise ValueError("Duplicate PANEL_IDX in matched_rows before BlockMatrix extraction.")
+
+    reader = HailBlockMatrixReader(
+        bm_path, storage_options=storage_options, block_cache=block_cache
+    )
+    matrix = _assemble(reader, global_idxs, max_workers=fetch_workers)
+    flip_positions = [i for i, row in enumerate(matched_rows) if row["PANEL_ALLELE_SWAPPED"]]
+    matrix = _apply_flips(matrix, flip_positions)
+
+    targets = pd.DataFrame({
+        "idx": np.array(global_idxs, dtype=np.int64),
+        "chrom": [str(row["LD_CHROM"]) for row in matched_rows],
+        "pos": [int(row["LD_POS"]) for row in matched_rows],
+        "ref": [str(row["LD_REF"]) for row in matched_rows],
+        "alt": [str(row["LD_ALT"]) for row in matched_rows],
+        "rsid": [f"v{i:08d}" for i in range(len(matched_rows))],
+        "flipped": [bool(row["PANEL_ALLELE_SWAPPED"]) for row in matched_rows],
+    })
+    ld_prefix.parent.mkdir(parents=True, exist_ok=True)
+    targets.to_csv(f"{ld_prefix}.variants.tsv", sep="\t", index=False)
+    np.savez(f"{ld_prefix}.npz", matrix=matrix, idx=targets["idx"].to_numpy())
 
 
 def extract_ld_from_local_panel(
@@ -1335,18 +1473,7 @@ def analyze_locus(
     )
     index_seconds = round(time.monotonic() - t_idx0, 3)
 
-    import pandas as pd
-    from ldcov.io.variant_index import VariantIndex
-
-    candidates = pd.DataFrame({
-        "contig": [row["LD_CHROM"] for row in normalized],
-        "position": [row["LD_POS"] for row in normalized],
-        "ref": [row["LD_REF"] for row in normalized],
-        "alt": [row["LD_ALT"] for row in normalized],
-    })
-    matches = VariantIndex(str(index)).match_variants(
-        candidates, allow_allele_swap=True
-    )
+    matches = match_panel_variants(index, normalized)
     matched, panel_excluded = resolve_panel_matches(normalized, matches)
     all_excluded = liftover_excluded + cross_chrom_excluded + panel_excluded
     reason_counts = dict(Counter(r["reason"] for r in all_excluded))
@@ -1457,18 +1584,13 @@ def analyze_locus(
     if local_ld_panel is not None:
         extract_ld_from_local_panel(local_ld_panel, matched_rows, ld_prefix)
     else:
-        run_checked([
-            "ldcov", "--ld-bm", "--bm",
-            f"s3://pan-ukb-us-east-1/ld_release/UKBB.{population}.ldadj.bm",
-            "--variant-index", str(index),
-            "--z", str(z_path),
-            "--allow-allele-swap",
-            "--on-missing", "error",
-            "--block-cache", "2",
-            "--fetch-workers", "2",
-            "--output-format", "npz",
-            "--out", str(ld_prefix),
-        ])
+        extract_ld_from_blockmatrix(
+            bm_path=f"s3://pan-ukb-us-east-1/ld_release/UKBB.{population}.ldadj.bm",
+            matched_rows=matched_rows,
+            ld_prefix=ld_prefix,
+            block_cache=2,
+            fetch_workers=2,
+        )
 
     matrix_npy_path = ld_dir / "matrix.npy"
     ld_validation = matrix_to_npy(
@@ -1511,6 +1633,12 @@ def analyze_locus(
 
     n_swapped = sum(1 for r in matched_rows if r["PANEL_ALLELE_SWAPPED"])
     lead_matched = max(matched_rows, key=lambda r: (r["LP"], -r["GWAS_POS"]))
+    ss_vals = sorted(float(r["SS"]) for r in matched_rows if r.get("SS") is not None)
+    ss_min = ss_vals[0] if ss_vals else None
+    ss_max = ss_vals[-1] if ss_vals else None
+    ss_median = ss_vals[len(ss_vals) // 2] if ss_vals else None
+    ss_ratio = round(ss_min / ss_max, 4) if (ss_min is not None and ss_max and ss_max > 0) else None
+    ss_het_warn = bool(ss_ratio is not None and ss_ratio < 0.80)
     return {
         "region_id": region_id,
         "region_type": region_type,
@@ -1531,6 +1659,11 @@ def analyze_locus(
         "variants_allele_swapped": n_swapped,
         "variants_excluded": len(records) - len(matched_rows),
         "exclusion_reasons": reason_counts,
+        "ss_min": ss_min,
+        "ss_median": ss_median,
+        "ss_max": ss_max,
+        "ss_min_max_ratio": ss_ratio,
+        "sample_size_heterogeneity_warning": ss_het_warn,
         "lead_variant_id": lead_matched["ID"],
         "lead_gwas_variant_id": lead_matched["GWAS_VARIANT_ID"],
         "lead_pos_grch38": lead_matched["GWAS_POS"],
@@ -1621,19 +1754,29 @@ def run(args: argparse.Namespace) -> Path:
         raise ValueError(f"Supply --reference-sample-size for the {args.population} LD panel.")
 
     gwas_ancestry = metadata.get("ancestry")
-    if gwas_ancestry in REFERENCE_SAMPLES and gwas_ancestry != args.population:
+    if (
+        gwas_ancestry in REFERENCE_SAMPLES
+        and gwas_ancestry != args.population
+        and not getattr(args, "allow_ancestry_mismatch", False)
+    ):
         raise ValueError(
             f"GWAS ancestry {gwas_ancestry} does not match LD population {args.population}."
         )
     if gwas_ancestry == "ALL":
-        raise ValueError(
-            "Pan-UKB has no combined-ancestry LD panel; use an ancestry-matched GWAS "
-            "or P-value-only prioritisation for ALL-ancestry studies."
-        )
+        ancestry_ld_status = "multi_ancestry_gwas_single_panel_ld"
+    elif gwas_ancestry in REFERENCE_SAMPLES and gwas_ancestry != args.population:
+        ancestry_ld_status = "explicit_override_ancestry_mismatch"
+    elif gwas_ancestry == args.population:
+        ancestry_ld_status = "matched"
+    else:
+        ancestry_ld_status = "unspecified_gwas_ancestry"
 
     output_dir = Path(args.output_root).resolve() / study_id / gwas_id
     if output_dir.exists() and any(output_dir.iterdir()):
-        raise FileExistsError(f"GWAS output directory is not empty: {output_dir}")
+        if getattr(args, "force", False):
+            shutil.rmtree(output_dir)
+        else:
+            raise FileExistsError(f"GWAS output directory is not empty: {output_dir} (pass --force to overwrite)")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     from pyliftover import LiftOver
@@ -1756,6 +1899,7 @@ def run(args: argparse.Namespace) -> Path:
         "gwas_id": gwas_id,
         "trait": metadata.get("phenotype"),
         "gwas_ancestry": metadata.get("ancestry"),
+        "ancestry_ld_status": ancestry_ld_status,
         "gwas_build": "GRCh38",
         "vcf_optional_tags": vcf_tags,
         "ld_reference": "Pan-UKB public AWS S3" if local_ld_panel is None else f"local_fixture:{local_ld_panel.name}",
@@ -1806,6 +1950,7 @@ def run(args: argparse.Namespace) -> Path:
         "overall_status": overall_status,
         "study_id": study_id,
         "gwas_id": gwas_id,
+        "ancestry_ld_status": ancestry_ld_status,
         "upstream_qc": qc_upstream,
         "genomewide_significant_variants": len(significant),
         "minimum_variant_ss_over_significant_variants": (
@@ -1839,12 +1984,70 @@ def run(args: argparse.Namespace) -> Path:
     if not args.no_report:
         render_gwas_report(output_dir, scripts_dir)
 
+    if getattr(args, "output_record", None):
+        write_json(Path(args.output_record), {
+            "ok": True,
+            "row_key": f"{study_id}/{gwas_id}",
+            "study_id": study_id,
+            "gwas_id": gwas_id,
+            "settings_hash": getattr(args, "settings_hash", ""),
+            "overall_status": overall_status,
+            "analyzed_regions": n_analyzed,
+            "cs_rss": total_cs_rss,
+            "cs_rrss": total_cs_rrss,
+            "output_dir": str(output_dir),
+        })
+
     return output_dir
+
+
+def _apply_row_json(args: argparse.Namespace) -> None:
+    if not args.row_json:
+        return
+    row = json.loads(Path(args.row_json).read_text(encoding="utf-8"))
+    args.vcf = row["vcf"]
+    args.metadata = row.get("metadata") or None
+    args.qc = row.get("qc") or None
+    args.study_id = row["study_id"]
+    args.gwas_id = row["gwas_id"]
+    args.trait = row.get("trait") or None
+    args.ancestry = row.get("ancestry") or None
+    args.gene_id = row.get("gene_id") or None
+    args.chain = row["chain"]
+    args.grch37_fasta = row["grch37_fasta"]
+    args.gene_annotation = row.get("gene_annotation") or None
+    args.output_root = row["outdir"]
+    args.cache_dir = row["cache_dir"]
+    args.panukb_dir = row.get("panukb_dir") or None
+    args.local_ld_panel = row.get("local_ld_panel") or None
+    args.population = row["ld_population"]
+    args.reference_sample_size = row.get("reference_sample_size")
+    args.effective_n = row.get("effective_n")
+    args.significance_lp = float(row["significance_lp"])
+    args.cis_significance_lp = (
+        float(row["cis_significance_lp"])
+        if row.get("cis_significance_lp") is not None
+        else None
+    )
+    args.region_flank_bp = int(row["region_flank_bp"])
+    args.max_region_width_bp = int(row["max_region_width_bp"])
+    args.gene_window_bp = int(row["gene_window_bp"])
+    args.exclude_mhc = bool(row.get("exclude_mhc", False))
+    args.max_loci = int(row.get("max_loci", 0))
+    args.max_causal = int(row.get("max_causal", 10))
+    args.max_iter = int(row.get("max_iter", 200))
+    args.keep_intermediates = bool(row.get("keep_intermediates", False))
+    args.force = bool(row.get("force", False))
+    args.no_report = not bool(row.get("report", True))
+    args.allow_ancestry_mismatch = bool(row.get("allow_ancestry_mismatch", False))
+    args.settings_hash = row.get("settings_hash", "")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--vcf", required=True, help="Bgzipped + indexed GRCh38 GWAS-VCF (.vcf.gz)")
+    parser.add_argument("--row-json", help="JSON row specification emitted by prepare_manifest.py")
+    parser.add_argument("--output-record", help="Path to write per-row completion/error JSON record")
+    parser.add_argument("--vcf", help="Bgzipped + indexed GRCh38 GWAS-VCF (.vcf.gz)")
     parser.add_argument("--metadata", help="Optional GWASprocessing metadata.json")
     parser.add_argument("--qc", help="Optional GWASprocessing qc.json")
     parser.add_argument("--study-id", help="Study identifier (overrides or replaces metadata.json)")
@@ -1852,10 +2055,10 @@ def main() -> None:
     parser.add_argument("--trait", help="Optional phenotype label")
     parser.add_argument("--ancestry", help="Optional GWAS ancestry label (e.g. EUR)")
     parser.add_argument("--gene-id", help="Optional explicit UniProt accession or HGNC gene symbol for cis_gene")
-    parser.add_argument("--chain", required=True, help="GRCh38-to-GRCh37 UCSC chain")
-    parser.add_argument("--grch37-fasta", required=True, help="GRCh37 primary assembly FASTA")
+    parser.add_argument("--chain", help="GRCh38-to-GRCh37 UCSC chain")
+    parser.add_argument("--grch37-fasta", help="GRCh37 primary assembly FASTA")
     parser.add_argument("--gene-annotation", help="GRCh38 UniProt/gene table (gene_regions_GRCh38.tsv)")
-    parser.add_argument("--output-root", required=True)
+    parser.add_argument("--output-root", help="Root directory for <study_id>/<gwas_id>/ outputs")
     parser.add_argument("--cache-dir", default="~/.cache/gwasfinemapping")
     parser.add_argument(
         "--panukb-dir",
@@ -1899,9 +2102,19 @@ def main() -> None:
     parser.add_argument("--max-causal", type=int, default=10, help="Maximum causal signals L in SuSiE (default: 10)")
     parser.add_argument("--max-iter", type=int, default=200, help="Maximum IBSS iterations in SuSiE (default: 200)")
     parser.add_argument("--keep-intermediates", action="store_true", help="Keep scratch LD/VCF/TSV files for debugging")
+    parser.add_argument("--force", action="store_true", help="Overwrite an existing GWAS output folder")
+    parser.add_argument("--allow-ancestry-mismatch", action="store_true", help="Allow mismatched single-ancestry LD")
+    parser.add_argument("--report", choices=("true", "false"), help="Whether to write per-GWAS report.html")
     parser.add_argument("--no-report", action="store_true", help="Skip HTML report rendering")
 
     args = parser.parse_args()
+    args.settings_hash = ""
+    if args.report is not None:
+        args.no_report = args.report == "false"
+    if args.row_json:
+        _apply_row_json(args)
+    if not all((args.vcf, args.chain, args.grch37_fasta, args.output_root)):
+        parser.error("--vcf, --chain, --grch37-fasta, and --output-root are required (unless --row-json is supplied).")
     if args.max_loci < 0 or args.region_flank_bp < 1 or args.gene_window_bp < 0:
         parser.error("Locus count must be non-negative and window sizes valid.")
     if args.max_region_width_bp < 2 * args.region_flank_bp or args.max_region_width_bp > 9_900_000:
@@ -1909,8 +2122,23 @@ def main() -> None:
     if args.significance_lp <= 0 or (args.cis_significance_lp is not None and args.cis_significance_lp <= 0):
         parser.error("Significance thresholds (--significance-lp / --cis-significance-lp) must be positive.")
 
-    output = run(args)
-    print(output)
+    if args.output_record:
+        try:
+            output = run(args)
+            print(output)
+        except Exception as exc:  # noqa: BLE001 - isolate row failure in batch mode & log error
+            print(f"ERROR [{args.study_id}/{args.gwas_id}]: {exc}", file=sys.stderr)
+            write_json(Path(args.output_record), {
+                "ok": False,
+                "row_key": f"{args.study_id}/{args.gwas_id}",
+                "study_id": args.study_id or "",
+                "gwas_id": args.gwas_id or "",
+                "settings_hash": args.settings_hash,
+                "error": str(exc),
+            })
+    else:
+        output = run(args)
+        print(output)
 
 
 if __name__ == "__main__":

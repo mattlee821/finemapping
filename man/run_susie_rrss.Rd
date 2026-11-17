@@ -4,7 +4,8 @@
 \usage{
 run_susie_rrss(variants, R, reference_sample_size, effective_n = NULL,
   L = 10L, coverage = 0.95, min_abs_corr = 0.5,
-  max_iter = 50L, refine = FALSE, R_mismatch = "eb_mix")
+  max_iter = 200L, refine = FALSE, R_mismatch = "eb_mix",
+  psd_max_variants = 5000L, eigen_max_variants = 5000L)
 }
 \arguments{
 \item{variants}{Validated variant data with signed \code{EZ} or valid
@@ -22,10 +23,16 @@ or \code{NULL} to disable purity filtering.}
 \item{refine}{Whether to run the SuSiE refinement step.}
 \item{R_mismatch}{Robust LD-mismatch model: \code{"none"}, \code{"eb"}, or
 \code{"eb_mix"}. The default is \code{"eb_mix"}.}
+\item{psd_max_variants}{Maximum variant count for dense \eqn{O(M^3)} PSD
+eigenvalue checking.}
+\item{eigen_max_variants}{Maximum variant count for dense \eqn{O(M^3)}
+\code{eigen(R)} caching inside \code{R_mismatch}; loci above this size use
+finite-sample \code{R_finite} regularization with \code{R_mismatch = "none"}.}
 }
 \value{
 A list containing variant PIPs, credible-set summaries and membership,
-robust-model diagnostics, provenance, and the fitted \code{susieR} model.
+robust-model diagnostics, provenance, and the \code{coloc}-ready fitted
+\code{susieR} model.
 }
 \description{
 Fits the robust RSS extension in \code{susieR} with

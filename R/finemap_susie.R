@@ -96,9 +96,14 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
                             coverage = 0.95, min_abs_corr = 0.5,
                             max_iter = 200L, refine = FALSE,
                             R_mismatch = "eb_mix",
-                            psd_max_variants = 5000L) {
+                            psd_max_variants = 5000L,
+                            eigen_max_variants = 5000L) {
   if (!method_id %in% c("susie_rss", "susie_rrss")) {
     stop("Unsupported SuSiE method identifier.", call. = FALSE)
+  }
+  if (length(eigen_max_variants) != 1L || !is.numeric(eigen_max_variants) ||
+      is.na(eigen_max_variants) || eigen_max_variants < 1L) {
+    stop("`eigen_max_variants` must be one positive integer.", call. = FALSE)
   }
   if (length(L) != 1L || !is.numeric(L) || is.na(L) || L < 1 ||
       L != floor(L)) {
@@ -139,6 +144,8 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
   psd_status <- attr(ld_check, "psd_status") %||% "passed"
   n <- resolve_effective_n(variants, effective_n)
 
+  r_mismatch_requested <- if (method_id == "susie_rrss") R_mismatch else "none"
+  q_art_eigen_status <- "not_applicable"
   if (method_id == "susie_rrss") {
     if (length(reference_sample_size) != 1L ||
         !is.numeric(reference_sample_size) ||
@@ -158,6 +165,14 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
            call. = FALSE)
     }
     R_finite <- reference_sample_size
+    if (R_mismatch != "none") {
+      if (nrow(R) <= as.integer(eigen_max_variants)) {
+        q_art_eigen_status <- "computed"
+      } else {
+        R_mismatch <- "none"
+        q_art_eigen_status <- "skipped_large_m"
+      }
+    }
   } else {
     R_finite <- NULL
     R_mismatch <- "none"
@@ -243,6 +258,8 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
     iterations = fit$niter %||% NA_integer_,
     final_elbo = if (length(fit$elbo) > 0L) utils::tail(fit$elbo, 1L) else NA_real_,
     psd_check = psd_status,
+    q_art_eigen = q_art_eigen_status,
+    r_mismatch_effective = R_mismatch,
     R_reliability_flag = fit$R_finite_diagnostics$R_reliability_flag %||% NA,
     SER_fallback = fit$R_finite_diagnostics$SER_fallback %||% NA,
     artifact_flag = fit$R_finite_diagnostics$artifact_flag %||% NA,
@@ -296,7 +313,9 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
         effective_n_summary = n$summary,
         R_finite = R_finite,
         R_mismatch = R_mismatch,
-        psd_max_variants = as.integer(psd_max_variants)
+        R_mismatch_requested = r_mismatch_requested,
+        psd_max_variants = as.integer(psd_max_variants),
+        eigen_max_variants = as.integer(eigen_max_variants)
       )
     ),
     fit = fit
@@ -329,7 +348,8 @@ run_susie_rrss <- function(variants, R, reference_sample_size,
                            effective_n = NULL, L = 10L, coverage = 0.95,
                            min_abs_corr = 0.5, max_iter = 200L,
                            refine = FALSE, R_mismatch = "eb_mix",
-                           psd_max_variants = 5000L) {
+                           psd_max_variants = 5000L,
+                           eigen_max_variants = 5000L) {
   run_susie_model(
     variants = variants,
     R = R,
@@ -342,6 +362,7 @@ run_susie_rrss <- function(variants, R, reference_sample_size,
     max_iter = max_iter,
     refine = refine,
     R_mismatch = R_mismatch,
-    psd_max_variants = psd_max_variants
+    psd_max_variants = psd_max_variants,
+    eigen_max_variants = eigen_max_variants
   )
 }

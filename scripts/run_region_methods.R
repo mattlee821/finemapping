@@ -271,6 +271,8 @@ for (i in seq_along(methods)) {
     ),
     file.path(method_dir, "region_result.rds")
   )
+  rm(result)
+  invisible(gc(FALSE))
 }
 
 if (emit_tsv) {

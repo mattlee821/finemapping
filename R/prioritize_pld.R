@@ -31,26 +31,33 @@ prioritize_pld <- function(variants, R, r2_thresholds) {
   ranked_ids <- ids[ordering]
 
   results <- lapply(r2_thresholds, function(threshold) {
-    selected <- integer()
-    excluded_by <- rep(NA_character_, nrow(ranked))
-    keep <- logical(nrow(ranked))
+    n_var <- nrow(ranked)
+    selected <- integer(n_var)
+    n_sel <- 0L
+    excluded_by <- rep(NA_character_, n_var)
+    keep <- logical(n_var)
 
-    for (i in seq_len(nrow(ranked))) {
-      if (length(selected) == 0L) {
+    for (i in seq_len(n_var)) {
+      if (n_sel == 0L) {
         keep[[i]] <- TRUE
-        selected <- i
+        n_sel <- 1L
+        selected[[1L]] <- i
         next
       }
 
-      r2 <- R[ordering[[i]], ordering[selected], drop = TRUE]^2
+      sel_pos <- selected[seq_len(n_sel)]
+      # R is validated symmetric; column access is contiguous in column-major R
+      r_col <- R[ordering[sel_pos], ordering[[i]], drop = TRUE]
+      r2 <- r_col * r_col
       high_ld <- which(r2 >= threshold)
       if (length(high_ld) == 0L) {
         keep[[i]] <- TRUE
-        selected <- c(selected, i)
+        n_sel <- n_sel + 1L
+        selected[[n_sel]] <- i
       } else {
         max_r2 <- max(r2[high_ld])
-        first_max <- high_ld[which(r2[high_ld] == max_r2)[[1]]]
-        excluded_by[[i]] <- ranked_ids[selected[[first_max]]]
+        first_max <- high_ld[which(r2[high_ld] == max_r2)[[1L]]]
+        excluded_by[[i]] <- ranked_ids[sel_pos[[first_max]]]
       }
     }
 
