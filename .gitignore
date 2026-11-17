@@ -1,5 +1,6 @@
 .DS_Store
 ._*
+.licenses/
 .nextflow/
 .nextflow.log*
 slurm-*.out

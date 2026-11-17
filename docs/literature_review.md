@@ -10,6 +10,7 @@ The review covers the five papers supplied in `docs/papers/`, the primary SuSiE-
 
 | File | Paper |
 |---|---|
+| [2021.09.03.21262975v1.full.pdf](./papers/2021.09.03.21262975v1.full.pdf) | Kanai et al. (2021), “Insights from complex trait fine-mapping across diverse populations,” *medRxiv*, DOI [10.1101/2021.09.03.21262975](https://doi.org/10.1101/2021.09.03.21262975). |
 | [bbag574.pdf](./papers/bbag574.pdf) | Chen et al. (2026), “Systematic benchmarking of multi-ancestry fine-mapping under variant heterogeneity and LD mismatch,” *Briefings in Bioinformatics*, DOI [10.1093/bib/bbag574](https://doi.org/10.1093/bib/bbag574). |
 | [ddaa148.pdf](./papers/ddaa148.pdf) | Hutchinson et al. (2020), “Fine-mapping genetic associations,” *Human Molecular Genetics*, DOI [10.1093/hmg/ddaa148](https://doi.org/10.1093/hmg/ddaa148). |
 | [main.pdf](./papers/main.pdf) | Benner et al. (2017), “Prospects of Fine-Mapping Trait-Associated Genomic Regions by Using Summary Statistics from GWAS,” *The American Journal of Human Genetics* 101:539–551, DOI [10.1016/j.ajhg.2017.08.012](https://doi.org/10.1016/j.ajhg.2017.08.012). |
@@ -105,21 +106,38 @@ The literature supports the requested separation of concerns:
 
 This architecture is a recommendation consistent with the user requirements, not a claim that workflow choice changes statistical performance.
 
+## Locus clustering, window defaults, significance gates, and MHC policy (resolved 17 Nov 2026)
+
+Full-text review of all six supplied PDFs alongside open-access full texts retrieved via Europe PMC — Sun et al. (2023, UKB-PPP, *Nature*, [PMC10567551](https://europepmc.org/article/PMC/PMC10567551)), Eldjarn et al. (2023, *Nature*, [PMC10567571](https://europepmc.org/articles/PMC10567571)), Wallace (2021, `coloc.susie`, *PLOS Genetics*, [PMC8504726](https://europepmc.org/articles/PMC8504726)), Zou et al. (2022, `SuSiE-RSS`, [PMC9337707](https://europepmc.org/articles/PMC9337707)), Benner et al. (2016, `FINEMAP`, [PMC4866522](https://europepmc.org/articles/PMC4866522)), Hutchinson, Watson & Wallace (2020, [PMC7179948](https://europepmc.org/articles/PMC7179948)), Weissbrod et al. (2020, `PolyFun`, [PMC7710571](https://europepmc.org/articles/PMC7710571)), Kerimov et al. (2021, `eQTL Catalogue`, [PMC8423625](https://europepmc.org/articles/PMC8423625)), Barbeira et al. (2021, GTEx v8, [PMC7836161](https://europepmc.org/articles/PMC7836161)), and Broekema et al. (2020, [PMC7014684](https://europepmc.org/articles/PMC7014684)) — plus source-code audits of `mkanai/finemapping-pipeline` and `MRCIEU/GeneHackman` establishes four production rules:
+
+1. **Regional significance gate ($P \le 5 \times 10^{-8}$, `LP >= 7.30103` by default across all region types):**
+   - Every reviewed GWAS/pQTL method, benchmark, and biobank atlas (Schaid et al. 2018 p. 2; Benner et al. 2016 $p_0 = 0$; Kanai et al. 2021; Sun et al. 2023; Eldjarn et al. 2023; Li & Zhou 2025 pp. 2–3; Chen et al. 2026) requires genome-wide significance before fine-mapping both `cis` and `trans` loci.
+   - In pinned `susieR` 2.0.0, `check_null_threshold = 0` and `susie_get_pip(..., prune_by_cs = FALSE)` allow sub-threshold noise or minor external-LD discrepancies to emit $\sum \text{PIP} \ge 1$ or false-positive credible sets in weak/null windows (Zou et al. 2022; Hutchinson et al. 2020). Wallace (2021, Fig. 2) shows `coloc.susie` performs 0 comparisons when either trait has 0 credible sets and recommends falling back to single-variant `coloc.abf` from marginal `ES`/`SE` rather than running `SuSiE` on underpowered loci.
+   - Secondary credible sets inside an activated ($P \le 5 \times 10^{-8}$) locus must **never** be filtered by marginal P-value so opposite-LD masked signals are retained (Benner et al. 2016; Kanai et al. 2021 p. 9; Li & Zhou 2025 p. 4). An explicit provenance-recorded override (`--cis-significance-lp`) supports specialist cis-QTL designs.
+2. **Greedy 3 Mb (`±1.5 Mb`) lead-centred windowing + overlap merge (vs static LD blocks or `GeneHackman`):**
+   - Kanai et al. (2021, pp. 3, 9, 19; `make_finemap_inputs.py`) rank $P < 5 \times 10^{-8}$ variants by $\chi^2$ descending, place a $\pm 1.5\text{ Mb}$ (3 Mb) window on the top variant, drop other significant variants inside that window from lead selection, repeat, and merge overlapping intervals — capturing distal non-coding enhancers 0.6–1.2 Mb away (`PHACTR1`/`EDN1`, `GATA3`, `8q24`) and long-range negative-LD masking (`FGFR4`, `CETP`).
+   - Static haplotype/LD-block boundaries are rejected per Schaid et al. (2018, p. 7) because arbitrary block edges truncate correlated variants near boundaries. `MRCIEU/GeneHackman`'s `plink --clump` + `±1 Mb` approach is rejected because it relies on 1000G rsIDs, fails to merge overlapping windows in single-ancestry mode (`R/finemap.R`), and lacks MHC handling.
+   - For protein GWAS, target cis regions remain anchored to `gene start − 1 Mb` to `gene end + 1 Mb` (`region_type = "cis_gene"`), harmonising boundaries across Olink, SomaScan, and GTEx (Sun et al. 2023). A 9.5 Mb valley-split ceiling prevents merged chains from exceeding Pan-UKB's 10 Mb stored LD radius.
+3. **Single-region MHC (`chr6:25,500,000–34,000,000` GRCh38) + `mhc_region` flags + `--exclude-mhc`:**
+   - Official NCBI GRC `assembly_regions.txt` defines the core MHC as `chr6:28,477,797–33,448,354` (GRCh37.p13) and `chr6:28,510,120–33,480,577` (GRCh38.p14). Following Sun et al. (2023), treating extended HLA (`chr6:25,500,000–34,000,000` GRCh38, 8.50 Mb) as **1 single locus** captures extended `HIST1` + HLA class I/II/III LD while staying inside Pan-UKB's 10 Mb BlockMatrix radius (whereas Kanai's prose `25–36 Mb` = 11 Mb exceeds the 10 Mb band). `MRCIEU/GeneHackman` has no MHC handling and slices HLA into overlapping 2 Mb clumps.
+4. **Unobtained full texts (explicitly excluded from citation):**
+   - Full texts were not accessible in `docs/papers/` or Europe PMC Open Access (`OPEN_ACCESS:y`) for: Wang et al. (2020, *JRSS-B* `10.1111/rssb.12388`), Fernandez-Rozadilla et al. (2023, *Nature Genetics* `10.1038/s41588-022-01222-9`), Berisa & Pickrell (2016, *Bioinformatics* `10.1093/bioinformatics/btv546`), Ferkingstad et al. (2021, `10.1038/s41588-021-00978-w`), Pietzner et al. (2021, `10.1126/science.abj1541`), GTEx Consortium (2020, *Science* `10.1126/science.aaz1776`), Hormozdiari et al. (2014, `CAVIAR`), Yang et al. (2023, `CARMA`), Zhang et al. (2026, `RSparsePro` VoR), Cui et al. (2024, `SuSiE-inf`), Yuan et al. (2024, `SuSiEx`), Gao & Zhou (2024, `MESuSiE`), and publisher supplementary files for Kanai (2021), Sun (2023), Benner (2017), and Schaid (2018).
+
 ## Confirmed decisions and remaining evidence gaps
 
-Confirmed and implemented:
+Confirmed:
 
 1. **p-LD\* defaults:** \(r^2 = 0.1, 0.01, 0.001\), analyzed independently; top-N applies only to P-value prioritization.
 2. **`susieR` pin:** tag 2.0.0 at commit `4134b03dceb0e7c0e1a8885a926781ba4b0d6743`; synthetic tests exercise standard RSS and robust RSS diagnostics.
 3. **Sample-size approximation:** minimum non-missing regional `SS`, with an explicit effective-N override. This is not an exact likelihood for heterogeneous sample sizes; binary-trait `SS`/`NC` interpretation needs validation.
+4. **Significance gate, windows, and MHC:** default $P \le 5 \times 10^{-8}$ gate across all regions (opt-in `--cis-significance-lp`), Kanai greedy `±1.5 Mb` (3 Mb) merged loci (9.5 Mb ceiling), gene-anchored `cis_gene` (`±1 Mb`), and single merged extended MHC (`chr6:25.5–34.0 Mb` GRCh38) with `mhc_region` / `mhc_core_grc` flags and `--exclude-mhc`.
 
 Remaining evidence gaps:
 
-1. **Locus/gene region rules:** genome-wide significance, merging distance, extension, gene annotation/build and cis-window need evidence-backed defaults and per-run overrides. Cis/trans labeling must remain separate from fine-mapping.
-2. **Liftover and ambiguous alleles:** select a chain/map source and define indel, strand, palindromic, multiallelic and ambiguous handling; retain every mapping/exclusion reason.
-3. **LD QC and repair:** define configured checks for symmetry, diagonal, missingness, correlation range, PSD and any explicit regularization/repair. Never repair silently.
-4. **Population and multi-ancestry policy:** choose LD population explicitly, record the rationale, and do not treat a multi-ancestry meta-analysis as if one panel were automatically matched.
-5. **Phase 2 evidence and validation:** obtain the CARMA paper text and review inaccessible supplements before selecting or implementing CARMA/PolyFun defaults. Benchmark actual representative regions before promising resource requirements.
+1. **Liftover and ambiguous alleles:** retain every mapping/exclusion reason (`no_chain_mapping`, `ref_mismatch_after_liftover`, `no_exact_panel_allele_match`, `duplicate_panel_variant`) in `qc.json` and monitor attrition across studies.
+2. **LD QC and repair:** validate symmetry, diagonal, finite values, and correlation range on every locus (skipping $O(M^3)$ full `eigen()` when $M > 5,000$ such as single-region MHC). Never repair silently.
+3. **Population and multi-ancestry policy:** choose LD population explicitly among the 6 Pan-UKB panels (`AFR`, `AMR`, `CSA`, `EAS`, `EUR`, `MID`), record its sample size and rationale, and do not treat a multi-ancestry meta-analysis as if one panel were automatically matched.
+4. **Phase 2 evidence and validation:** obtain the CARMA paper text and review inaccessible supplements before selecting or implementing CARMA/PolyFun defaults.
 
 ## Additional sources reviewed
 

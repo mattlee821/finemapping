@@ -1,129 +1,83 @@
-# Proposed architecture and data contracts
+# Architecture and data contracts
 
-**Status:** The R package implements P-value ranking, p-LD, SuSiE-RSS, SuSiE-rRSS, GWAS-statistic validation, and LD-matrix validation. Synthetic tests and real-data smoke tests cover GWAS-VCF parsing and P-value ranking on three studies. Public-S3 Pan-UKB extraction produced a validated 700-variant EUR matrix for a 100-kb region. A bounded singleton Nextflow fine-mapping run completed on Ferkingstad P43320/CRYBB2 for three selected genome-wide-significant loci with LD-matched variants, and the gene-region output labelled 20,280 variants as cis. Method outputs are aggregated per GWAS as method-specific `.rda` files, while region-level TSV/JSON audit sidecars remain. The runner now defaults to all mapped clusters and queries each full positional cluster plus a flank; the historical three-locus test used lead-centered windows. At the strongest mapped locus, SuSiE-RSS still did not converge after 200 iterations. SuSiE-rRSS converged at iteration 124 with a 200-iteration cap, but its LD/summary-statistics reliability warning remained; `SER_fallback` is a flag, not replacement of the multi-effect fit. These diagnostics mean the results are not scientifically validated. The significance, clustering-distance, interval-flank, and cis-window parameters are provisional; full-genome and directory-scale throughput remain untested. The fine-mapping workflow currently accepts one GWAS at a time. See [the Pan-UKB LD guide](panukb-ld.md).
+**Status:** Phase A design and methods contracts finalised (17 Nov 2026); Phase B implementation targets >10,000-GWAS storage efficiency, evidence-backed region/MHC defaults, self-contained HTML reporting, and `GWASprocessing`-aligned container/SLURM portability. Reusable epidemiological and statistical fine-mapping defaults live in `~/.claude/skills/methods/references/fine-mapping.md`; this file specifies the `GWASfinemapping` software architecture and input/output contracts. See [the Pan-UKB LD guide](panukb-ld.md) and [the reference-data guide](reference-data.md).
 
 ## System boundaries
 
-GWASprocessing is the upstream producer of standardized GWAS-VCF files. GWASfinemapping consumes those files; it must not make GWASprocessing a runtime dependency or repeat its harmonization. This repository owns its validation, reference matching, methods, workflow, outputs, dependencies, and versioning.
+`GWASprocessing` is the upstream producer of standardised GRCh38 GWAS-VCF files. `GWASfinemapping` consumes those files; it does not make `GWASprocessing` a runtime dependency or repeat its harmonisation. This repository owns its input validation, allele-aware liftover and Pan-UKB reference matching, statistical methods, Nextflow orchestration, storage-light output contract, container environment, test suite, and benchmark.
 
-The same R functions should be usable interactively and from scripts. Nextflow orchestrates tasks; it does not contain statistical method logic. Python is reserved for supporting components such as a validated `ldcov` or later PolyFun integration.
+The statistical core lives in the `gwasfinemapping` R package (`R/`) so functions can be invoked interactively, in unit tests, and from workflow runners. Nextflow (`finemapping.nf`) and `scripts/finemap.sh` orchestrate local and SLURM execution across single GWAS or multi-GWAS manifests. Python (`scripts/run_finemapping.py`, `scripts/reference_data.py`, `scripts/report_finemapping.py`) handles indexed VCF extraction (`bcftools`), PyArrow regional slicing of installed Pan-UKB variant indexes, `ldcov` S3 BlockMatrix extraction, scratch lifecycle cleanup, and self-contained HTML report rendering.
 
-## Proposed components
+## Components
 
 | Component | Responsibility |
 |---|---|
-| R input/QC | Read VCF headers and records; validate required INFO/FORMAT fields, statistics, uniqueness, genome build, and metadata; preserve input fields and exclusion reasons. |
-| R loci/regions | Define genome-wide loci or consume explicit intervals; gene annotation and cis/trans classification remain separate from fine-mapping. |
-| R LD interface | Request regional Pan-UKB LD; match variants by coordinates and alleles; align signed correlations and Z-scores; validate and cache a uniquely keyed matrix. |
-| R methods | Implement ordered Phase 1 methods and normalize shared result fields while retaining method-specific diagnostics. |
-| Nextflow | Orchestrate GWAS × region × method work, reuse LD across compatible methods, allocate SLURM resources, and aggregate outputs/provenance. |
-| Python support | Wrap established tools only where needed; no duplicate implementation of statistical methods. |
+| `scripts/source.sh` + `scripts/lib/env.sh` | Bootstrap micromamba + Python tools (`Hail`, `ldcov[s3]`) + isolated R library (`gwasfinemapping`, `susieR` 2.0.0) + Apptainer `.sif` image; redirect work/cache/reference paths out of cloud-synced folders. |
+| `scripts/install_reference_data.sh` | Install and verify UCSC `hg38ToHg19.over.chain.gz`, Ensembl GRCh37 FASTA + `.fai`, UniProt GRCh38 gene coordinates (`usefuldata`), and all 6 whole-population Pan-UKB GRCh37 Parquet variant indexes (`AFR`, `AMR`, `CSA`, `EAS`, `EUR`, `MID`). |
+| Region builder (`scripts/run_finemapping.py`) | Enforce the default $P < 5 \times 10^{-8}$ (`LP >= 7.30103`) significance gate across all region types; construct target `cis_gene` (`gene start − 1 Mb` to `gene end + 1 Mb`), greedy lead-centred 3 Mb (`±1.5 Mb`) merged genome-wide loci (with a 9.5 Mb valley-split ceiling for Pan-UKB's 10 Mb LD band), and a single merged extended MHC locus (`chr6:25,500,000–34,000,000` GRCh38, or skip when `--exclude-mhc` is set). |
+| Scratch LD & liftover stage | Slice the installed population Parquet index via PyArrow (`cut_regional_index`), lift GRCh38 variants to GRCh37 with allele-aware FASTA normalisation, extract Pan-UKB LD via `ldcov`, pass aligned float64 LD to R via binary `.npy` (no ASCII `matrix.tsv.gz`), and delete per-locus scratch files immediately on locus completion unless `--keep-intermediates` is requested. |
+| R statistical package (`R/`) | Validate GWAS records (`validate_gwas_vcf_records`) and LD matrices (`validate_ld_matrix`, skipping $O(M^3)$ dense `eigen()` when $M > 5,000$); run deterministic `p-value` and `p-ld` ($r^2 < 0.1, 0.01, 0.001$) prioritisation plus Bayesian `SuSiE-RSS` and `SuSiE-rRSS` (`susieR` 2.0.0) with `GWAS_VARIANT_ID`-named `alpha`, `lbf_variable`, and `pip` objects ready for `coloc::coloc.susie()` and `coloc::coloc.bf_bf()`. |
+| HTML reporting (`report.html` + `manifest.html`) | Render one self-contained `<study_id>/<gwas_id>/report.html` per GWAS (with base64-embedded regional diagnostic plots, QC waterfall, MHC/mismatch/convergence badges, and credible-set tables; no loose `.png` files) plus a batch-level `manifest.html`. |
 
-## Versioned run configuration proposal
+## GWAS-VCF input contract
 
-Use one YAML run configuration with a required `schema_version`. Validate it against a checked-in JSON Schema before launching work. The proposed top-level contract is:
-
-```yaml
-schema_version: 1
-run:
-  id: example-run
-  genome_build: GRCh38
-gwas:
-  id: trait-or-study-id
-  vcf: /path/to/standardized.gwas.vcf.gz
-  trait: example-trait
-  ancestry: recorded-label
-regions:
-  mode: genome_wide # or explicit / gene_regions
-  significance_threshold: null
-  merge_distance_bp: null
-  extension_bp: null
-ld:
-  reference: panukb
-  release: required-release-id
-  population: required-explicit-label
-  reference_sample_size: null # required when using SuSiE-rRSS
-  variant_index: /path/to/matched.variant_index.parquet
-methods:
-  - id: p_value
-    top_n: null
-  - id: p_ld
-    r2_thresholds: [0.1, 0.01, 0.001]
-sample_size:
-  estimator: minimum_variant_ss
-  effective_n_override: null
-resources:
-  cpus: 1
-  memory: 4.GB
-  time: 1.h
-```
-
-This is the version 1 interface proposal, mirrored in `config/schema.json` and `config/example.yaml`. Defaults currently confirmed by the project owner:
-
-- p-LD\* thresholds: `r2 = 0.1, 0.01, 0.001`, each analyzed independently.
-- Gene-region default: gene body extended by 1 Mb upstream and downstream.
-- SuSiE sample-size estimator: minimum QC-passing per-variant `SS` in the region, unless an explicit effective-N override is supplied.
-- `susieR`: pin GitHub commit `4134b03dceb0e7c0e1a8885a926781ba4b0d6743` (tag 2.0.0) for both RSS methods. SuSiE-rRSS uses `R_finite = B`; `R_mismatch` defaults to `"eb_mix"` and is configurable among the pinned implementation's supported choices.
-
-Required validation rules:
-
-- `schema_version` must be supported; unknown keys and invalid method settings must fail preflight with clear errors.
-- The JSON Schema and example config are checked in; workflow-level preflight enforcement is not implemented yet.
-- GWAS genome build and selected LD release/population are explicit. Never infer a Pan-UKB population from a GWAS ancestry label.
-- Trait-specific overrides are explicit and recorded; they do not silently replace run-wide defaults.
-- Paths, input checksums, reference release, population, sample size, parameters, software versions, and workflow revision are recorded in run provenance.
-- A method-specific input or configuration failure must not be reported as a successful empty result.
-
-## GWAS-VCF input contract proposal
-
-The expected input is the standardized GWAS-VCF produced upstream, on GRCh38, with ALT as the effect allele. Preserve the original record and relevant metadata, including `ID`, `INFO/SNPID`, `INFO/HM`, `FORMAT/AFS`, and other present upstream annotations.
-
-At minimum validate and normalize:
+Inputs are bgzipped, tabix-indexed GRCh38 GWAS-VCF files (`*.vcf.gz` + `.tbi`) produced by `GWASprocessing`, with `ALT` as the effect allele:
 
 | Field | Contract |
 |---|---|
-| `CHROM`, `POS`, `REF`, `ALT` | Required variant identity and GRCh38 location; reject invalid coordinates and unsupported multiallelic records unless explicitly handled. |
-| `FORMAT/ES`, `SE` | Effect estimate relative to ALT and its standard error when present; validate finite values and positive `SE`. |
-| `FORMAT/LP` | `-log10(P)` when present; validate range and derive P-values stably only when needed. |
-| `FORMAT/EZ` | Z-score when present; otherwise derive only from valid effect/SE data. |
-| `FORMAT/SS` | Preserve per-variant sample size; do not silently collapse heterogeneous values to a scalar. |
-| `FORMAT/AF`, `AFS`, `SI`, `NC` | Preserve and validate when present; do not require fields irrelevant to a particular study design. |
+| `CHROM`, `POS`, `REF`, `ALT`, `ID` | Required GRCh38 coordinates and alleles (`1`–`22`, `X`, `Y`); canonical `GWAS_VARIANT_ID` is `chr:pos:ref:alt` on GRCh38. |
+| `FORMAT/ES`, `FORMAT/SE` | Effect size relative to `ALT` and positive standard error; finite numeric values required. |
+| `FORMAT/LP` | $-\log_{10}(P)$; finite non-negative values required (`LP >= 7.30103` corresponds to $P \le 5 \times 10^{-8}$). |
+| `FORMAT/SS` | Per-variant sample size; regional `SuSiE` uses minimum non-missing regional `SS` unless `--effective-n` overrides it. |
+| `FORMAT/AF`, `FORMAT/AFS`, `INFO/HM` | Extracted and preserved in per-locus variant tables when present (`NA` if absent in source VCF) for downstream Mendelian randomisation palindromic/MAF checks and `coloc`. |
 
-Preflight should detect duplicate variants, missing/invalid required statistics, inconsistent field declarations, and malformed records. It must state whether a statistic was supplied or derived. The precise required-field matrix by method, multi-sample VCF behavior, and acceptable sample-size heterogeneity remain to be tested against representative GWASprocessing outputs before finalizing the schema.
+## Region construction and MHC contract
 
-## Variant and LD contract
+1. **Significance gate (`--significance-lp`, default `7.30103`, $P \le 5 \times 10^{-8}$):**
+   - Applied uniformly by default to genome-wide loci, `cis_gene` windows, and the MHC before LD extraction or method execution.
+   - Optional explicit override `--cis-significance-lp` (recorded in `provenance.json`) allows specialist cis-QTL thresholds when pre-specified. If `cis_gene` has no variant meeting its gate, LD extraction and fine-mapping are skipped and `qc.json` records `status = "skipped_below_significance_threshold"` alongside `max_lp`.
+   - Secondary credible sets inside an activated locus are **never** filtered by marginal P-value.
+2. **Target `cis_gene` window (`--gene-window-bp`, default `1,000,000`):**
+   - When `--uniprot-id` or `--gene-id` resolves uniquely in `gene_regions_GRCh38.tsv`, constructs `[max(1, start - 1e6), end + 1e6]` (`region_type = "cis_gene"`).
+3. **Genome-wide lead-centred windows (`--region-flank-bp`, default `1,500,000` = 3 Mb window):**
+   - Greedy positional lead selection following Kanai et al. (2021): rank significant non-MHC variants by `LP` descending, centre `[lead - 1.5 Mb, lead + 1.5 Mb]` on the top variant, mask all other significant variants inside that 3 Mb window from further lead selection, repeat until exhausted, and **merge overlapping intervals**.
+   - **Pan-UKB 10 Mb radius guard (`--max-region-width-bp`, default `9,500,000`):** If chained merges exceed 9.5 Mb on GRCh38/GRCh37, split at the deepest $-\log_{10} P$ valley between leads and record `split_at_panukb_radius = true` in `qc.json`.
+4. **MHC region (`chr6:25,500,000–34,000,000` GRCh38; official GRC core `chr6:28,510,120–33,480,577` GRCh38 / `chr6:28,477,797–33,448,354` GRCh37):**
+   - Default behaviour: collapse all significant MHC variants into **1 single `chr6:25,500,000–34,000,000` region** (`region_type = "mhc"`, 8.50 Mb, strictly within Pan-UKB's 10 Mb stored LD radius), truncate adjacent non-MHC flanks at `25,499,999` / `34,000,001`, and set `mhc_region = TRUE` and `mhc_core_grc` on locus summaries, variant tables, and credible sets.
+   - Pipeline option `--exclude-mhc` (`params.exclude_mhc`): records discovered MHC hits in `qc.json` (`status = "excluded_by_option"`) and skips MHC LD extraction and fine-mapping.
 
-GWAS-VCF variants are GRCh38 while the specified Pan-UKB index is GRCh37. Regional LD requests must use allele-aware build conversion and retain a mapping record for every input variant, including mapped coordinates/alleles, transformations, status, and exclusion reason. Matching by rsID alone is prohibited.
+## Storage-light output contract (>10,000 GWAS scale)
 
-Before any method consumes LD, validate dimensions, order, variant coverage, allele orientation, symmetry, diagonal, correlation range, missingness, and numerical stability/PSD. Any regularization or matrix repair must be explicit, configurable, and recorded. A matrix value outside the reference's stored band is unavailable LD, not zero LD. Unavailable, unmatched, and measured near-zero values must remain distinct.
+To keep 10,000 fine-mapped GWAS within ~200–240 GB (~20–24 MB per GWAS instead of ~10 GB per GWAS of dense LD intermediates), each published `<output_root>/<study_id>/<gwas_id>/` directory retains **only**:
 
-Use a cache key containing at least the reference release, population, build mapping/version, region, extraction settings, variant set, and variant order. Validate cached contents before reuse. Align Z and R together; when genotype coding is reversed, use the corresponding row/column sign flips in R and sign change in Z.
+```text
+<study_id>/<gwas_id>/
+├── metadata.json          # Study/trait/gene/panel summary & status
+├── provenance.json        # Software/git versions, CLI parameters, reference SHA-256s, Pan-UKB sample size
+├── qc.json                # Complete locus manifest, liftover/panel attrition counts, LD validation, CS & mismatch flags
+├── report.html            # Self-contained QC & locus visualisation report (base64 plots, zero external assets)
+└── methods/
+    ├── p-value.rda        # Standalone xz-compressed R object `p_value`
+    ├── p-ld.rda           # Standalone xz-compressed R object `p_ld` (r2 = 0.1, 0.01, 0.001)
+    ├── susie-rss.rda      # Standalone xz-compressed R object `susie_rss` (coloc.susie-ready `fit`)
+    └── susie-rrss.rda     # Standalone xz-compressed R object `susie_rrss` (R_finite + R_mismatch = "eb_mix")
+```
 
-## Proposed normalized result contract
+All per-locus intermediate directories (`discovery/*.tsv`, `gene_region/*.tsv`, `loci/<id>/inputs/`, `loci/<id>/mapping/`, `loci/<id>/ld/*.{npz,npy,tsv}`, `loci/<id>/methods/`) are written to scratch space and deleted automatically after aggregation and report rendering (unless `--keep-intermediates` is explicitly passed for debugging).
 
-Every per-region/per-method result should include common identifiers:
+### `coloc.susie` & `coloc.bf_bf` compatibility contract
 
-`schema_version`, `run_id`, `gwas_id`, `trait`, `region_id`, `method_id`, `method_version`, `CHROM`, `POS`, `REF`, `ALT`, `ID`, `SNPID`, `genome_build`, original GWAS statistics, `ld_reference`, `ld_population`, execution status, and provenance reference.
+In both `susie-rss.rda` and `susie-rrss.rda`, every region's `fit` object (`susie_rss$regions[[region_id]]$result$fit`) sets:
+- `colnames(fit$alpha)`, `colnames(fit$lbf_variable)`, `colnames(fit$mu)`, `colnames(fit$mu2)`, and `names(fit$pip)` to canonical GRCh38 `GWAS_VARIANT_ID` (`chr:pos:ref:alt`);
+- `fit$sets$cs`, `fit$sets$cs_index`, and `fit$sets$purity` from `susieR` (`min_abs_corr = 0.5`, `coverage = 0.95`);
+- Per-variant `ID` (rsID), `PANEL_VARIANT_ID` (GRCh37), `ES`, `SE`, `LP`, `SS`, `AF`, `AFS`, `HM`, `mhc_region`, and `mhc_core_grc` in `result$variants`.
 
-Method-specific fields are additive:
+Downstream `coloc::coloc.susie(fit1, fit2)` and `coloc::coloc.bf_bf()` therefore run directly on the saved `.rda` files with no LD matrix required.
 
-- Prioritization: rank, selected flag, selection threshold, and pruning/exclusion reason. P-value methods must not emit `PIP` or credible-set membership.
-- Bayesian methods: PIP, credible-set/component identifier, set coverage, purity, convergence, and method-specific diagnostics.
+## Confirmed decisions
 
-Produce per-region/per-method results, aggregate genome-wide results, method diagnostics, explicit failure/exclusion reports, and run-level provenance. Use typed missing values for fields not defined by a method; do not encode “not applicable” as zero.
-
-## Confirmed decisions and remaining evidence gaps
-
-Confirmed and implemented:
-
-1. p-LD uses independent `r^2 = 0.1, 0.01, 0.001` runs; top-N applies only to P-value prioritization.
-2. `susieR` is pinned to GitHub tag 2.0.0's commit; synthetic tests exercise both RSS methods and diagnostics.
-3. RSS uses the minimum non-missing regional `SS` unless an explicit effective-N override is supplied; per-variant values and the selected estimator are retained.
-
-Remaining evidence gaps and design decisions:
-
-1. Validate genome-wide locus thresholds/merge/extension, gene annotation source/build, and gene-region/cis-window defaults on target use cases.
-2. Select and validate the allele-aware GRCh38→GRCh37 mapping source and ambiguous/indel/palindromic variant policy.
-3. Validate binary-trait interpretation of `SS`/`NC` before treating minimum `SS` as SuSiE `n`; it remains an explicitly recorded approximation.
-7. Confirm whether the initial release should error on incomplete regional LD or permit a documented alternative such as splitting/redefining the region.
-
+1. **Standalone per-method `.rda` layout (`Option 1B`):** Four self-contained `xz`-compressed `.rda` files per GWAS (`p-value.rda`, `p-ld.rda`, `susie-rss.rda`, `susie-rrss.rda`), working identically for single complex-trait GWAS (such as BMI or colon and rectal cancer) and multi-thousand-protein studies (such as UKB-PPP or deCODE).
+2. **Significance gate:** Default `LP >= 7.30103` ($P \le 5 \times 10^{-8}$) across all region modes, with explicit opt-in `--cis-significance-lp`.
+3. **Window rules:** Kanai greedy `±1.5 Mb` (3 Mb) merged loci (9.5 Mb valley-split ceiling) + gene-anchored `cis_gene` (`±1 Mb`) + single merged extended MHC (`chr6:25.5–34.0 Mb` GRCh38) with `mhc_region` flags and `--exclude-mhc`.
+4. **All 6 Pan-UKB LD populations supported automatically:** `AFR` (`6,637`), `AMR` (`982`), `CSA` (`8,876`), `EAS` (`2,709`), `EUR` (`420,542`), and `MID` (`1,599`), verified from the Pan-UKB Hail table globals.
+5. **`susieR` pin:** GitHub tag `2.0.0` (`4134b03dceb0e7c0e1a8885a926781ba4b0d6743`).
