@@ -174,6 +174,7 @@ fi
 # Mode 3 (Default): Real-data benchmark on Locke 2015 BMI + Sun 2023 UKB-PPP P16860_OID20049 (NPPB)
 if [[ -z "$GWAS_ROOT" ]]; then
   for cand in \
+    "${HOME}/research-local/GWASprocessing/data/GWAS" \
     "/Volumes/drive1/research/GWASprocessing/data/GWAS" \
     "${HOME}/GWASprocessing/GWAS" \
     "${HOME}/drive1/research/GWASprocessing/data/GWAS"; do

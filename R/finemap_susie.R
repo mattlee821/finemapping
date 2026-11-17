@@ -91,6 +91,82 @@ name_susie_fit_variants <- function(fit, variant_ids) {
   fit
 }
 
+compute_credible_sets_fast <- function(fit, R, coverage = 0.95,
+                                       min_abs_corr = 0.5,
+                                       max_exact_purity = 500L) {
+  raw_cs <- susieR::susie_get_cs(
+    fit,
+    Xcorr = NULL,
+    coverage = coverage,
+    min_abs_corr = NULL,
+    check_symmetric = FALSE
+  )
+  if (is.null(raw_cs$cs) || length(raw_cs$cs) == 0L) {
+    return(list(
+      cs = NULL,
+      coverage = NULL,
+      requested_coverage = coverage
+    ))
+  }
+  cs_list <- raw_cs$cs
+  effect_indices <- as.integer(sub("^L", "", names(cs_list)))
+  claimed_cov <- as.numeric(raw_cs$coverage)
+
+  purity_mat <- matrix(NA_real_, nrow = length(cs_list), ncol = 3L)
+  for (i in seq_along(cs_list)) {
+    pos <- as.integer(cs_list[[i]])
+    if (length(pos) <= 1L) {
+      purity_mat[i, ] <- c(1, 1, 1)
+    } else {
+      pos_eval <- if (length(pos) > max_exact_purity) {
+        pos[unique(round(seq.int(1L, length(pos), length.out = 200L)))]
+      } else {
+        pos
+      }
+      sub_r <- abs(R[pos_eval, pos_eval, drop = FALSE])
+      vals <- sub_r[upper.tri(sub_r, diag = FALSE)]
+      purity_mat[i, ] <- c(
+        min(vals),
+        sum(vals) / length(vals),
+        stats::median(vals)
+      )
+    }
+  }
+  purity_df <- as.data.frame(purity_mat)
+  colnames(purity_df) <- c("min.abs.corr", "mean.abs.corr", "median.abs.corr")
+
+  keep <- if (!is.null(min_abs_corr)) {
+    which(purity_df[, 1L] >= min_abs_corr)
+  } else {
+    seq_len(nrow(purity_df))
+  }
+  if (length(keep) == 0L) {
+    return(list(
+      cs = NULL,
+      coverage = NULL,
+      requested_coverage = coverage
+    ))
+  }
+
+  cs_list <- cs_list[keep]
+  purity_df <- purity_df[keep, , drop = FALSE]
+  claimed_cov <- claimed_cov[keep]
+  effect_indices <- effect_indices[keep]
+
+  row_names <- paste0("L", effect_indices)
+  names(cs_list) <- row_names
+  rownames(purity_df) <- row_names
+
+  ord <- order(purity_df[, 1L], decreasing = TRUE)
+  list(
+    cs = cs_list[ord],
+    purity = purity_df[ord, , drop = FALSE],
+    cs_index = effect_indices[ord],
+    coverage = claimed_cov[ord],
+    requested_coverage = coverage
+  )
+}
+
 run_susie_model <- function(variants, R, method_id, effective_n = NULL,
                             reference_sample_size = NULL, L = 10L,
                             coverage = 0.95, min_abs_corr = 0.5,
@@ -178,21 +254,25 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
     R_mismatch <- "none"
   }
 
+  # validate_ld_matrix already verified unit diagonal and symmetry:
+  # standardize = FALSE avoids 4 redundant M x M copies, and min_abs_corr = NULL
+  # avoids susieR 2.0.0's un-subsampled get_purity() O(M^2) allocation on diffuse slots.
   fit <- susieR::susie_rss(
     z = variants$EZ,
     R = R,
     n = n$value,
     L = as.integer(L),
+    standardize = FALSE,
     coverage = coverage,
-    min_abs_corr = min_abs_corr,
+    min_abs_corr = NULL,
     max_iter = as.integer(max_iter),
     refine = refine,
     R_finite = R_finite,
     R_mismatch = R_mismatch
   )
-  cs <- susieR::susie_get_cs(
+  cs <- compute_credible_sets_fast(
     fit,
-    Xcorr = R,
+    R = R,
     coverage = coverage,
     min_abs_corr = min_abs_corr
   )

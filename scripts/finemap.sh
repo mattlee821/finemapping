@@ -206,6 +206,64 @@ LOG_ROOT="${GWASFM_CACHE_DIR}/logs/runs/${RUN_ID}"
 NXF_LOG="${LOG_ROOT}/nextflow.${RUN_ID}.log"
 mkdir -p "$OUTDIR" "$LOG_ROOT" "${GWASFM_NXF_WORK}"
 
+# Fast preflight path on host: skip Nextflow JVM startup for --dry-run or when all rows are already complete
+SKIP_NXF=0
+if [[ -z "$CONTAINER_ENGINE" && -z "${GWASFM_CONTAINER:-}" ]]; then
+  PREP_CMD=(
+    python3 "${ROOT_DIR}/scripts/prepare_manifest.py" prepare
+    --outdir "$OUTDIR"
+    --state-file "${OUTDIR}/.finemap_state.tsv"
+    --output "${LOG_ROOT}/run_manifest.tsv"
+    --summary "${LOG_ROOT}/run_manifest_summary.json"
+    --rows-dir "${LOG_ROOT}/rows"
+    --chain "$CHAIN"
+    --grch37-fasta "$FASTA"
+    --cache-dir "${GWASFM_CACHE_DIR}"
+    --population "$LD_POP"
+    --significance-lp "${SIG_LP:-7.301029995664}"
+    --region-flank-bp "${FLANK_BP:-1500000}"
+    --max-region-width-bp 9500000
+    --gene-window-bp 1000000
+    --exclude-mhc "$EXCLUDE_MHC"
+    --max-loci "${MAX_LOCI:-0}"
+    --max-causal 10
+    --max-iter 200
+    --row-limit "$ROW_LIMIT"
+    --force "$FORCE"
+    --dry-run "$DRY_RUN"
+    --report "$REPORT"
+    --keep-intermediates "$KEEP_INTERMEDIATES"
+    --allow-ancestry-mismatch "$ALLOW_ANC_MISMATCH"
+  )
+  [[ -f "$GENE_ANNOT" ]] && PREP_CMD+=(--gene-annotation "$GENE_ANNOT")
+  [[ -d "$PANUKB_DIR" ]] && PREP_CMD+=(--panukb-dir "$PANUKB_DIR")
+  [[ -n "$INPUT_DIR" ]] && PREP_CMD+=(--input-dir "$INPUT_DIR")
+  [[ -n "$MANIFEST" ]] && PREP_CMD+=(--manifest "$MANIFEST")
+  [[ -n "$VCF" ]] && PREP_CMD+=(--vcf "$VCF")
+  [[ -n "$ONLY_STUDY" ]] && PREP_CMD+=(--only-study "$ONLY_STUDY")
+  [[ -n "$STUDY_ID" ]] && PREP_CMD+=(--study-id "$STUDY_ID")
+  [[ -n "$GWAS_ID" ]] && PREP_CMD+=(--gwas-id "$GWAS_ID")
+  [[ -n "$METADATA" ]] && PREP_CMD+=(--metadata "$METADATA")
+  [[ -n "$QC" ]] && PREP_CMD+=(--qc "$QC")
+  [[ -n "$TRAIT" ]] && PREP_CMD+=(--trait "$TRAIT")
+  [[ -n "$ANCESTRY" ]] && PREP_CMD+=(--ancestry "$ANCESTRY")
+  [[ -n "$GENE_ID" ]] && PREP_CMD+=(--gene-id "$GENE_ID")
+  [[ -n "$CIS_SIG_LP" ]] && PREP_CMD+=(--cis-significance-lp "$CIS_SIG_LP")
+  [[ -n "$LOCAL_LD_PANEL" ]] && PREP_CMD+=(--local-ld-panel "$LOCAL_LD_PANEL")
+
+  if "${PREP_CMD[@]}" >/dev/null 2>&1; then
+    if [[ "$DRY_RUN" == "true" ]]; then
+      SKIP_NXF=1
+    elif python3 -c "import json,sys; d=json.load(open(sys.argv[1])); raise SystemExit(0 if d.get('rows_to_run',1)==0 and not d.get('invalid') else 1)" "${LOG_ROOT}/run_manifest_summary.json"; then
+      python3 "${ROOT_DIR}/scripts/prepare_manifest.py" update-state \
+        --state-file "${OUTDIR}/.finemap_state.tsv" \
+        --outdir "$OUTDIR" \
+        --output "${LOG_ROOT}/state_update_summary.json" >/dev/null 2>&1 || true
+      SKIP_NXF=1
+    fi
+  fi
+fi
+
 NF_CMD=(
   nextflow
   -log "$NXF_LOG"
@@ -250,7 +308,9 @@ NF_CMD=(
 [[ "$RESUME" -eq 1 ]] && NF_CMD+=(-resume)
 
 nf_status=0
-"${NF_CMD[@]}" || nf_status=$?
+if [[ "$SKIP_NXF" -eq 0 ]]; then
+  "${NF_CMD[@]}" || nf_status=$?
+fi
 
 if [[ "$DRY_RUN" != "true" && -f "${LOG_ROOT}/run_manifest.tsv" ]]; then
   slurm_out=""

@@ -138,17 +138,41 @@ def query_vcf(vcf: Path, region: str | None = None,
         optional_cols.append("HM")
     fmt += "\\n"
 
-    command = ["bcftools", "query"]
-    if region:
-        command.extend(["-r", region])
-    if minimum_lp is not None:
-        command.extend(["-i", f"FMT/LP[0:0]>={minimum_lp:.12g}"])
-    command.extend(["-f", fmt, str(vcf)])
-    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    if region is None and minimum_lp is not None:
+        p_view = subprocess.Popen(
+            ["bcftools", "view", "--threads", "4", "-u", "-i",
+             f"FMT/LP[0:0]>={minimum_lp:.12g}", str(vcf)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        p_query = subprocess.Popen(
+            ["bcftools", "query", "-f", fmt],
+            stdin=p_view.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert p_view.stdout is not None
+        p_view.stdout.close()
+        stdout_text, q_err = p_query.communicate()
+        v_err = p_view.stderr.read().decode("utf-8", errors="ignore") if p_view.stderr else ""
+        if p_view.wait() != 0:
+            raise subprocess.CalledProcessError(p_view.returncode, "bcftools view", stderr=v_err)
+        if p_query.returncode != 0:
+            raise subprocess.CalledProcessError(p_query.returncode, "bcftools query", stderr=q_err)
+    else:
+        command = ["bcftools", "query"]
+        if region:
+            command.extend(["-r", region])
+        if minimum_lp is not None:
+            command.extend(["-i", f"FMT/LP[0:0]>={minimum_lp:.12g}"])
+        command.extend(["-f", fmt, str(vcf)])
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        stdout_text = result.stdout
 
     expected_len = 9 + len(optional_cols)
     records = []
-    for line_number, line in enumerate(result.stdout.splitlines(), start=1):
+    for line_number, line in enumerate(stdout_text.splitlines(), start=1):
         fields = line.split("\t")
         if len(fields) != expected_len:
             raise ValueError(f"Unexpected bcftools query row {line_number}: {line}")
@@ -1131,6 +1155,100 @@ def ensure_regional_index(population: str, chromosome: str, start: int, end: int
     return index
 
 
+def _normalize_ld_matrix_inplace(matrix: Any, ids: list[str]) -> dict[str, Any]:
+    """Validate and normalize a symmetric float64 LD matrix in-place using O(block^2) extra RAM."""
+    import numpy as np
+
+    n = len(ids)
+    if matrix.shape != (n, n):
+        raise ValueError("Extracted LD dimensions do not match its variant table.")
+    if len(set(ids)) != n:
+        raise ValueError("Extracted LD contains duplicate variant identifiers.")
+    if n == 0:
+        return {
+            "variants": 0,
+            "shape": [0, 0],
+            "raw_diagonal_min": 0.0,
+            "raw_diagonal_max": 0.0,
+            "diagonal_normalization": "D^-1/2 R D^-1/2",
+            "max_abs_asymmetry": 0.0,
+            "missing_cells": 0,
+        }
+
+    step = 512
+    for i in range(0, n, step):
+        if not bool(np.all(np.isfinite(matrix[i:min(n, i + step), :]))):
+            raise ValueError("Extracted LD has missing values or inconsistent indices.")
+
+    diagonal = np.diag(matrix).copy()
+    if np.any(diagonal <= 0) or np.max(np.abs(diagonal - 1.0)) > 0.01:
+        raise ValueError("Pan-UKB LD diagonal is outside the 0.01 normalization tolerance.")
+
+    max_asym = 0.0
+    for i in range(0, n, step):
+        ie = min(n, i + step)
+        for j in range(i, n, step):
+            je = min(n, j + step)
+            diff = float(np.max(np.abs(matrix[i:ie, j:je] - matrix[j:je, i:ie].T)))
+            if diff > max_asym:
+                max_asym = diff
+    if max_asym > 1e-8:
+        raise ValueError("Extracted LD matrix is not symmetric.")
+
+    scale = np.sqrt(diagonal)
+    matrix /= scale[:, None]
+    matrix /= scale[None, :]
+
+    max_abs = 0.0
+    for i in range(0, n, step):
+        ie = min(n, i + step)
+        for j in range(i, n, step):
+            je = min(n, j + step)
+            if i == j:
+                blk = matrix[i:ie, i:ie]
+                avg = 0.5 * (blk + blk.T)
+                matrix[i:ie, i:ie] = avg
+            else:
+                avg = 0.5 * (matrix[i:ie, j:je] + matrix[j:je, i:ie].T)
+                matrix[i:ie, j:je] = avg
+                matrix[j:je, i:ie] = avg.T
+            blk_max = float(np.max(np.abs(matrix[i:ie, j:je])))
+            if blk_max > max_abs:
+                max_abs = blk_max
+        if not bool(np.all(np.isfinite(matrix[i:ie, :]))):
+            raise ValueError("Normalized LD contains invalid correlations.")
+
+    np.fill_diagonal(matrix, 1.0)
+    if max_abs > 1.00001:
+        raise ValueError("Normalized LD contains invalid correlations.")
+
+    return {
+        "variants": n,
+        "shape": [n, n],
+        "raw_diagonal_min": float(diagonal.min()),
+        "raw_diagonal_max": float(diagonal.max()),
+        "diagonal_normalization": "D^-1/2 R D^-1/2",
+        "max_abs_asymmetry": max_asym,
+        "missing_cells": 0,
+    }
+
+
+def _write_symmetric_fortran_npy(matrix: Any, ids: list[str], output_npy_path: Path) -> None:
+    """Write a validated symmetric C- or F-contiguous float64 matrix as Fortran-order .npy with zero copy."""
+    import numpy as np
+
+    output_npy_path.parent.mkdir(parents=True, exist_ok=True)
+    if matrix.flags["F_CONTIGUOUS"]:
+        view_f = matrix
+    elif matrix.flags["C_CONTIGUOUS"] and matrix.ndim == 2 and matrix.shape[0] == matrix.shape[1]:
+        # Symmetric matrix: transpose view shares buffer with zero copy and is F_CONTIGUOUS!
+        view_f = matrix.T
+    else:
+        view_f = np.asfortranarray(matrix, dtype="<f8")
+    np.save(output_npy_path, view_f, allow_pickle=False)
+    output_npy_path.with_suffix(".ids.txt").write_text("\n".join(ids) + "\n", encoding="utf-8")
+
+
 def _validate_and_normalize_extracted_ld(
     npz_path: Path, variants_path: Path
 ) -> tuple[Any, list[str], Any, dict[str, Any]]:
@@ -1139,55 +1257,26 @@ def _validate_and_normalize_extracted_ld(
 
     ld_variants = pd.read_csv(variants_path, sep="\t", dtype={"chrom": str})
     with np.load(npz_path) as data:
-        matrix = np.asarray(data["matrix"], dtype=np.float64)
+        matrix = np.array(data["matrix"], dtype="<f8", copy=True)
         indexes = np.asarray(data["idx"])
-    if matrix.shape != (len(ld_variants), len(ld_variants)):
-        raise ValueError("Extracted LD dimensions do not match its variant table.")
-    if len(indexes) != len(ld_variants) or np.any(~np.isfinite(matrix)):
+    if len(indexes) != len(ld_variants):
         raise ValueError("Extracted LD has missing values or inconsistent indices.")
     ids = [
         f"{normalize_chromosome(row.chrom)}:{int(row.pos)}:{row.ref}:{row.alt}"
         for row in ld_variants.itertuples(index=False)
     ]
-    if len(set(ids)) != len(ids):
-        raise ValueError("Extracted LD contains duplicate variant identifiers.")
-    max_asym = float(np.max(np.abs(matrix - matrix.T))) if len(ids) else 0.0
-    if max_asym > 1e-8:
-        raise ValueError("Extracted LD matrix is not symmetric.")
-    diagonal = np.diag(matrix)
-    if np.any(diagonal <= 0) or np.max(np.abs(diagonal - 1)) > 0.01:
-        raise ValueError("Pan-UKB LD diagonal is outside the 0.01 normalization tolerance.")
-    scale = np.sqrt(diagonal)
-    normalized = (matrix / scale[:, None]) / scale[None, :]
-    normalized = 0.5 * (normalized + normalized.T)
-    np.fill_diagonal(normalized, 1.0)
-    if np.any(~np.isfinite(normalized)) or np.max(np.abs(normalized)) > 1.00001:
-        raise ValueError("Normalized LD contains invalid correlations.")
-
-    summary = {
-        "variants": len(ids),
-        "shape": list(matrix.shape),
-        "raw_diagonal_min": float(diagonal.min()),
-        "raw_diagonal_max": float(diagonal.max()),
-        "diagonal_normalization": "D^-1/2 R D^-1/2",
-        "max_abs_asymmetry": max_asym,
-        "missing_cells": 0,
-    }
-    return np.asfortranarray(normalized, dtype="<f8"), ids, indexes, summary
+    summary = _normalize_ld_matrix_inplace(matrix, ids)
+    view_f = matrix.T if (matrix.flags["C_CONTIGUOUS"] and matrix.shape[0] == matrix.shape[1]) else np.asfortranarray(matrix, dtype="<f8")
+    return view_f, ids, indexes, summary
 
 
 def matrix_to_npy(npz_path: Path, variants_path: Path, output_npy_path: Path
                   ) -> dict[str, Any]:
     """Validate and write binary float64 .npy LD matrix + companion .ids.txt for fast R load."""
-    import numpy as np
-
     normalized, ids, _, summary = _validate_and_normalize_extracted_ld(
         npz_path, variants_path
     )
-    output_npy_path.parent.mkdir(parents=True, exist_ok=True)
-    np.save(output_npy_path, normalized, allow_pickle=False)
-    ids_path = output_npy_path.with_suffix(".ids.txt")
-    ids_path.write_text("\n".join(ids) + "\n", encoding="utf-8")
+    _write_symmetric_fortran_npy(normalized, ids, output_npy_path)
     return summary
 
 
@@ -1214,11 +1303,14 @@ def extract_ld_from_blockmatrix(
     bm_path: str,
     matched_rows: list[dict[str, Any]],
     ld_prefix: Path,
-    block_cache: int = 2,
-    fetch_workers: int = 2,
+    block_cache: int = 4,
+    fetch_workers: int = 8,
     storage_options: dict[str, Any] | None = None,
-) -> None:
+    direct_npy_path: Path | None = None,
+    keep_npz: bool = True,
+) -> dict[str, Any] | None:
     """Extract submatrix from Pan-UKB Hail BlockMatrix using pre-resolved PANEL_IDX + PANEL_ALLELE_SWAPPED."""
+    import gc
     import numpy as np
     import pandas as pd
     from ldcov.io.blockmatrix.reader import HailBlockMatrixReader
@@ -1232,21 +1324,38 @@ def extract_ld_from_blockmatrix(
         bm_path, storage_options=storage_options, block_cache=block_cache
     )
     matrix = _assemble(reader, global_idxs, max_workers=fetch_workers)
+    del reader
     flip_positions = [i for i, row in enumerate(matched_rows) if row["PANEL_ALLELE_SWAPPED"]]
     matrix = _apply_flips(matrix, flip_positions)
 
-    targets = pd.DataFrame({
-        "idx": np.array(global_idxs, dtype=np.int64),
-        "chrom": [str(row["LD_CHROM"]) for row in matched_rows],
-        "pos": [int(row["LD_POS"]) for row in matched_rows],
-        "ref": [str(row["LD_REF"]) for row in matched_rows],
-        "alt": [str(row["LD_ALT"]) for row in matched_rows],
-        "rsid": [f"v{i:08d}" for i in range(len(matched_rows))],
-        "flipped": [bool(row["PANEL_ALLELE_SWAPPED"]) for row in matched_rows],
-    })
-    ld_prefix.parent.mkdir(parents=True, exist_ok=True)
-    targets.to_csv(f"{ld_prefix}.variants.tsv", sep="\t", index=False)
-    np.savez(f"{ld_prefix}.npz", matrix=matrix, idx=targets["idx"].to_numpy())
+    if keep_npz or direct_npy_path is None:
+        targets = pd.DataFrame({
+            "idx": np.array(global_idxs, dtype=np.int64),
+            "chrom": [str(row["LD_CHROM"]) for row in matched_rows],
+            "pos": [int(row["LD_POS"]) for row in matched_rows],
+            "ref": [str(row["LD_REF"]) for row in matched_rows],
+            "alt": [str(row["LD_ALT"]) for row in matched_rows],
+            "rsid": [f"v{i:08d}" for i in range(len(matched_rows))],
+            "flipped": [bool(row["PANEL_ALLELE_SWAPPED"]) for row in matched_rows],
+        })
+        ld_prefix.parent.mkdir(parents=True, exist_ok=True)
+        targets.to_csv(f"{ld_prefix}.variants.tsv", sep="\t", index=False)
+        np.savez(f"{ld_prefix}.npz", matrix=matrix, idx=targets["idx"].to_numpy())
+
+    if direct_npy_path is not None:
+        ids = [
+            f"{normalize_chromosome(str(row['LD_CHROM']))}:{int(row['LD_POS'])}:{row['LD_REF']}:{row['LD_ALT']}"
+            for row in matched_rows
+        ]
+        summary = _normalize_ld_matrix_inplace(matrix, ids)
+        _write_symmetric_fortran_npy(matrix, ids, direct_npy_path)
+        del matrix
+        gc.collect()
+        return summary
+
+    del matrix
+    gc.collect()
+    return None
 
 
 def extract_ld_from_local_panel(
@@ -1581,29 +1690,31 @@ def analyze_locus(
     )
 
     ld_prefix = ld_dir / f"panukb_{population.lower()}"
+    matrix_npy_path = ld_dir / "matrix.npy"
     if local_ld_panel is not None:
         extract_ld_from_local_panel(local_ld_panel, matched_rows, ld_prefix)
+        ld_validation = matrix_to_npy(
+            Path(f"{ld_prefix}.npz"),
+            Path(f"{ld_prefix}.variants.tsv"),
+            matrix_npy_path,
+        )
+        if not keep_intermediates:
+            Path(f"{ld_prefix}.npz").unlink(missing_ok=True)
+            Path(f"{ld_prefix}.variants.tsv").unlink(missing_ok=True)
     else:
-        extract_ld_from_blockmatrix(
+        ld_val_opt = extract_ld_from_blockmatrix(
             bm_path=f"s3://pan-ukb-us-east-1/ld_release/UKBB.{population}.ldadj.bm",
             matched_rows=matched_rows,
             ld_prefix=ld_prefix,
-            block_cache=2,
-            fetch_workers=2,
+            block_cache=4,
+            fetch_workers=8,
+            direct_npy_path=matrix_npy_path,
+            keep_npz=keep_intermediates,
         )
-
-    matrix_npy_path = ld_dir / "matrix.npy"
-    ld_validation = matrix_to_npy(
-        Path(f"{ld_prefix}.npz"),
-        Path(f"{ld_prefix}.variants.tsv"),
-        matrix_npy_path,
-    )
+        assert ld_val_opt is not None
+        ld_validation = ld_val_opt
     if keep_intermediates:
         write_json(ld_dir / "validation.json", ld_validation)
-    else:
-        # Free the raw ldcov .npz immediately before R loads matrix.npy
-        Path(f"{ld_prefix}.npz").unlink(missing_ok=True)
-        Path(f"{ld_prefix}.variants.tsv").unlink(missing_ok=True)
 
     method_qc = run_methods(
         variants_path=matched_variants_path,
