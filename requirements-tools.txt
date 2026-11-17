@@ -1,0 +1,13 @@
+hail==0.2.135
+lazybgen==0.2.0
+ldcov[s3]==0.5.0
+pyliftover==0.4.1
+pytest>=8,<10
+# Pins for the cloud-storage stack. s3fs and gcsfs each pin fsspec to their own release, and pip 24.x could not find a
+# matching set and failed (ResolutionImpossible); these are the versions that resolved together.
+fsspec==2026.9.0
+s3fs==2026.9.0
+gcsfs==2026.10.1
+aiobotocore==3.10.0
+boto3==1.43.117
+botocore==1.43.117

@@ -1,0 +1,2 @@
+uniprot_id	gene_symbol	ensembl_id	chrom	start	end	genome_build	source	version
+P43320	CRYBB2	ENSG00000244752	22	25212085	25231870	GRCh38	usefuldata	mapping_GRCh38_p14_uniprot

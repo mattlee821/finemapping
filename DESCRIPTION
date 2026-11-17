@@ -1,0 +1,22 @@
+Package: gwasfinemapping
+Title: Reproducible Fine-Mapping of GWAS Summary Statistics
+Version: 0.1.0
+Authors@R: person("Matthew", "Lee", role = c("aut", "cre"), email = "mattlee821@users.noreply.github.com")
+Author: Matthew Lee [aut, cre]
+Maintainer: Matthew Lee <mattlee821@users.noreply.github.com>
+Description: Validates standardized GWAS-VCF data and provides reproducible
+    prioritization and statistical fine-mapping methods with explicit LD
+    reference handling and provenance.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.2.0)
+Imports:
+    jsonlite,
+    susieR,
+    stats,
+    utils
+Suggests:
+    renv,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Remotes: stephenslab/susieR@4134b03dceb0e7c0e1a8885a926781ba4b0d6743

@@ -1,0 +1,16 @@
+^environment\.yml$
+^renv\.lock$
+^archive$
+^docs/papers$
+^\.git$
+^\.DS_Store$
+^.*\.DS_Store$
+^\.nextflow$
+^\.nextflow\.log.*$
+^\.dockerignore$
+^\.env$
+^\.env\.example$
+^\.github$
+^renv$
+^\.Rprofile$
+^\.pytest_cache$

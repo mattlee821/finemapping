@@ -1,0 +1,38 @@
+schema_version: 1
+run:
+  id: example-trait
+  genome_build: GRCh38
+  output_dir: results/example-trait
+gwas:
+  id: example-study
+  trait: example-trait
+  ancestry: REPLACE_WITH_STUDY_ANCESTRY
+  vcf: /path/to/standardized.gwas.vcf.gz
+regions:
+  mode: gene_regions
+  gene_annotation:
+    source: REPLACE_WITH_ANNOTATION_SOURCE
+    version: REPLACE_WITH_VERSION
+    genome_build: GRCh38
+  cis_window:
+    strategy: gene_body_extension
+    upstream_bp: 1000000
+    downstream_bp: 1000000
+ld:
+  reference: panukb
+  release: REPLACE_WITH_PAN_UKB_RELEASE
+  population: EUR
+  reference_sample_size: null
+  variant_index: /path/to/matched.variant_index.parquet
+sample_size:
+  estimator: minimum_variant_ss
+  effective_n_override: null
+methods:
+  - id: p_value
+    top_n: 100
+  - id: p_ld
+    r2_thresholds: [0.1, 0.01, 0.001]
+resources:
+  cpus: 1
+  memory: 4 GB
+  time: 1 h

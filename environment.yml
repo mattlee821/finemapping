@@ -1,0 +1,21 @@
+# Conda runtime shared by scripts/source.sh and the GHCR tools image.
+name: gwasfinemapping
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - openjdk=21
+  - python=3.12
+  - bcftools=1.24
+  - pandas>=2.2,<3
+  - pyarrow>=14
+  - r-base=4.6.2
+  - git
+  - curl
+  - ca-certificates
+  - cmake
+  - c-compiler
+  - cxx-compiler
+  - make
+  - pkg-config
+  - pip
