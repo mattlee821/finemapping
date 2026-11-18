@@ -12,6 +12,7 @@ on:
       - "DESCRIPTION"
       - "NAMESPACE"
       - "R/**"
+      - "src/**"
       - "conf/**"
       - "nextflow.config"
       - "finemapping.nf"
