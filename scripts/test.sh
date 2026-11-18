@@ -56,7 +56,10 @@ TMP_RCHK="$(mktemp -d "${TMPDIR:-/tmp}/gwasfm-rcheck-XXXXXX")"
       cat check.out >&2
       exit 1
     }
-  grep -E "^Status: OK" check.out
+  grep -E "^Status: OK" check.out || {
+    cat check.out >&2
+    exit 1
+  }
 )
 rm -rf "${TMP_RCHK}"
 

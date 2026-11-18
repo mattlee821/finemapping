@@ -28,3 +28,9 @@
 ^\.Rprofile$
 ^\.pytest_cache$
 ^tests/python$
+^finemapping$
+^manifests$
+^work$
+^output$
+^slurm-.*$
+^.*\.Rcheck$
