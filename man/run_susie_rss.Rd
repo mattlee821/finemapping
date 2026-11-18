@@ -3,7 +3,7 @@
 \title{Run SuSiE-RSS}
 \usage{
 run_susie_rss(variants, R, effective_n = NULL, L = 10L,
-  coverage = 0.95, min_abs_corr = 0.5, max_iter = 200L,
+  coverage = 0.95, min_abs_corr = 0.5, max_iter = 50L,
   refine = FALSE, psd_max_variants = 5000L)
 }
 \arguments{

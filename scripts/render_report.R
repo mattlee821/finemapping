@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Render a self-contained report.html for one fine-mapped GWAS purely from
-# {metadata,provenance,qc}.json and methods/{p-value,p-ld,susie-rss,susie-rrss}.rda.
+# {metadata,provenance,qc}.json and methods/{p-ld,susie-rss,susie-rrss,carma,polyfun}.{rda,rds}.
 
 parse_options <- function(args) {
   if (length(args) %% 2L != 0L) {
@@ -51,6 +51,14 @@ load_rda_object <- function(path, obj_name) {
     objs <- ls(env)
     if (length(objs) == 1L) get(objs[[1L]], envir = env) else NULL
   }
+}
+
+load_method_object <- function(methods_dir, stem, obj_name) {
+  rds_p <- file.path(methods_dir, paste0(stem, ".rds"))
+  if (file.exists(rds_p)) return(readRDS(rds_p))
+  rda_p <- file.path(methods_dir, paste0(stem, ".rda"))
+  if (file.exists(rda_p)) return(load_rda_object(rda_p, obj_name))
+  NULL
 }
 
 thin_indices <- function(n, keep_mask, max_bg = 2500L) {
@@ -240,8 +248,11 @@ qc <- jsonlite::fromJSON(file.path(gwas_dir, "qc.json"),
                          simplifyVector = FALSE)
 
 methods_dir <- file.path(gwas_dir, "methods")
-susie_rss_obj <- load_rda_object(file.path(methods_dir, "susie-rss.rda"), "susie_rss")
-susie_rrss_obj <- load_rda_object(file.path(methods_dir, "susie-rrss.rda"), "susie_rrss")
+pld_obj <- load_method_object(methods_dir, "p-ld", "p_ld")
+susie_rss_obj <- load_method_object(methods_dir, "susie-rss", "susie_rss")
+susie_rrss_obj <- load_method_object(methods_dir, "susie-rrss", "susie_rrss")
+carma_obj <- load_method_object(methods_dir, "carma", "carma")
+polyfun_obj <- load_method_object(methods_dir, "polyfun", "polyfun")
 
 status <- as.character(qc$overall_status %||% "UNKNOWN")
 status_tone <- switch(
@@ -265,12 +276,14 @@ sig_lp <- as.numeric(prov$significance_threshold_lp %||% 7.30103)
 
 # Build Locus Summary Table rows
 locus_rows_html <- if (length(loci_list) == 0L) {
-  '<tr><td colspan="11" class="muted">No genome-wide or cis regions passed the significance gate.</td></tr>'
+  '<tr><td colspan="13" class="muted">No genome-wide or cis regions passed the significance gate.</td></tr>'
 } else {
   paste(vapply(loci_list, function(loc) {
     st <- as.character(loc$status %||% "")
     m_rss <- loc$methods$susie_rss %||% list()
     m_rrss <- loc$methods$susie_rrss %||% list()
+    m_carma <- loc$methods$carma %||% list()
+    m_pf <- loc$methods$polyfun %||% list()
     m_pld <- loc$methods$p_ld$selected_by_r2 %||% list()
     pld_str <- if (length(m_pld) > 0L) {
       paste(sprintf("%s:%s", names(m_pld), unlist(m_pld)), collapse = " / ")
@@ -285,8 +298,13 @@ locus_rows_html <- if (length(loci_list) == 0L) {
     if (isTRUE(loc$sample_size_heterogeneity_warning)) flags <- c(flags, badge("SS-het", "warn"))
     if (identical(m_rss$converged, FALSE)) flags <- c(flags, badge("RSS-nonconv", "bad"))
     if (identical(m_rrss$converged, FALSE)) flags <- c(flags, badge("rRSS-nonconv", "bad"))
+    if (identical(m_carma$converged, FALSE)) flags <- c(flags, badge("CARMA-nonconv", "bad"))
+    if (identical(m_pf$converged, FALSE)) flags <- c(flags, badge("PolyFun-nonconv", "bad"))
     if (isTRUE(m_rrss$SER_fallback) || isTRUE(m_rrss$R_reliability_flag)) {
       flags <- c(flags, badge("LD-mismatch", "warn"))
+    }
+    if (!is.null(m_carma$outlier_count) && as.integer(m_carma$outlier_count) > 0L) {
+      flags <- c(flags, badge(paste0("CARMA-out:", as.integer(m_carma$outlier_count)), "warn"))
     }
     if (length(flags) == 0L) flags <- badge("clean", "ok")
 
@@ -300,6 +318,8 @@ locus_rows_html <- if (length(loci_list) == 0L) {
         "<td class='num'>%s / %s</td>",
         "<td class='mono'>%s (%s)</td>",
         "<td class='mono'>%s</td>",
+        "<td class='num'>%s</td>",
+        "<td class='num'>%s</td>",
         "<td class='num'>%s</td>",
         "<td class='num'>%s</td>",
         "<td>%s</td>",
@@ -317,6 +337,8 @@ locus_rows_html <- if (length(loci_list) == 0L) {
       html_escape(pld_str),
       fmt_int(m_rss$credible_sets),
       fmt_int(m_rrss$credible_sets),
+      fmt_int(m_carma$credible_sets),
+      fmt_int(m_pf$credible_sets),
       paste(flags, collapse = " "),
       fmt_num(loc$wall_seconds, 2L)
     )
@@ -327,29 +349,45 @@ locus_rows_html <- if (length(loci_list) == 0L) {
 cs_rows <- character()
 figure_blocks <- character()
 
-if (!is.null(susie_rss_obj) && length(susie_rss_obj$regions) > 0L) {
-  for (reg_id in names(susie_rss_obj$regions)) {
-    rss_reg <- susie_rss_obj$regions[[reg_id]]
-    rrss_reg <- if (!is.null(susie_rrss_obj)) susie_rrss_obj$regions[[reg_id]] else NULL
-    img_uri <- render_locus_png_base64(reg_id, rss_reg, rrss_reg, sig_lp = sig_lp)
+bayesian_objs <- list(
+  list(label = "SuSiE-RSS", obj = susie_rss_obj),
+  list(label = "SuSiE-rRSS", obj = susie_rrss_obj),
+  list(label = "CARMA", obj = carma_obj),
+  list(label = "PolyFun+SuSiE", obj = polyfun_obj)
+)
+active_bayesian <- Filter(function(x) !is.null(x$obj) && length(x$obj$regions) > 0L, bayesian_objs)
+all_reg_ids <- unique(unlist(lapply(active_bayesian, function(x) names(x$obj$regions))))
+
+if (length(all_reg_ids) > 0L) {
+  for (reg_id in all_reg_ids) {
+    primary_reg <- if (!is.null(susie_rss_obj) && !is.null(susie_rss_obj$regions[[reg_id]])) {
+      susie_rss_obj$regions[[reg_id]]
+    } else {
+      active_bayesian[[1L]]$obj$regions[[reg_id]]
+    }
+    secondary_reg <- if (!is.null(susie_rrss_obj) && !is.null(susie_rrss_obj$regions[[reg_id]])) {
+      susie_rrss_obj$regions[[reg_id]]
+    } else if (length(active_bayesian) >= 2L) {
+      active_bayesian[[2L]]$obj$regions[[reg_id]]
+    } else {
+      NULL
+    }
+    img_uri <- render_locus_png_base64(reg_id, primary_reg, secondary_reg, sig_lp = sig_lp)
     if (!is.null(img_uri)) {
       figure_blocks <- c(
         figure_blocks,
         sprintf(
           '<div class="locus-card"><h3>%s <span class="muted">(%s)</span></h3><img src="%s" alt="%s diagnostic plot"/></div>',
           html_escape(reg_id),
-          html_escape(rss_reg$region_type),
+          html_escape(primary_reg$region_type),
           img_uri,
           html_escape(reg_id)
         )
       )
     }
 
-    for (pair in list(
-      list(label = "SuSiE-RSS", obj = rss_reg),
-      list(label = "SuSiE-rRSS", obj = rrss_reg)
-    )) {
-      m_obj <- pair$obj
+    for (pair in active_bayesian) {
+      m_obj <- pair$obj$regions[[reg_id]]
       if (is.null(m_obj) || is.null(m_obj$result) ||
           is.null(m_obj$result$credible_sets) ||
           nrow(m_obj$result$credible_sets) == 0L) {
@@ -507,8 +545,8 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; background: rgba(14
     </div>
     <div class="stat-card">
       <div class="stat-label">95%% Credible Sets</div>
-      <div class="stat-val">%s (RSS) / %s (rRSS)</div>
-      <div class="muted">L = %s, purity &ge; 0.5</div>
+      <div class="stat-val">%s / %s / %s / %s</div>
+      <div class="muted">RSS / rRSS / CARMA / PolyFun (L = %s)</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">MHC (chr6:25.5–34.0 Mb)</div>
@@ -529,7 +567,7 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; background: rgba(14
         <tr>
           <th>Region ID</th><th>Type</th><th>GRCh38 Span</th><th class="num">Width (Mb)</th>
           <th class="num">Matched / VCF</th><th>Lead (LP)</th><th>p-LD (0.1/0.01/0.001)</th>
-          <th class="num">RSS CS</th><th class="num">rRSS CS</th><th>Flags</th><th class="num">Time</th>
+          <th class="num">RSS CS</th><th class="num">rRSS CS</th><th class="num">CARMA CS</th><th class="num">PolyFun CS</th><th>Flags</th><th class="num">Time</th>
         </tr>
       </thead>
       <tbody>%s</tbody>
@@ -570,6 +608,8 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; background: rgba(14
   html_escape(cis_info$status %||% "n/a"),
   fmt_int(qc$total_credible_sets_susie_rss),
   fmt_int(qc$total_credible_sets_susie_rrss),
+  fmt_int(qc$total_credible_sets_carma),
+  fmt_int(qc$total_credible_sets_polyfun),
   fmt_int(prov$max_causal_L %||% 10L),
   html_escape(mhc_info$status %||% "none"),
   fmt_int(mhc_info$significant_variant_count %||% 0L),

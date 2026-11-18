@@ -4,7 +4,7 @@
 \usage{
 run_susie_rrss(variants, R, reference_sample_size, effective_n = NULL,
   L = 10L, coverage = 0.95, min_abs_corr = 0.5,
-  max_iter = 200L, refine = FALSE, R_mismatch = "eb_mix",
+  max_iter = 50L, refine = FALSE, R_mismatch = "eb_mix",
   psd_max_variants = 5000L, eigen_max_variants = 5000L)
 }
 \arguments{

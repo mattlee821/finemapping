@@ -19,4 +19,5 @@ dependencies:
   - cxx-compiler
   - make
   - pkg-config
+  - gsl
   - pip

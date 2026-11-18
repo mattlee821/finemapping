@@ -197,6 +197,41 @@ def build_fixture(root: Path) -> dict:
     local_ld_npz = ref_root / "local_eur_panel.npz"
     np.savez(local_ld_npz, matrix=full_panel_R, idx=np.arange(total_m, dtype=np.int64))
 
+    # Synthetic PolyFun per-chromosome functional heritability priors (GRCh37)
+    polyfun_by_chrom = ref_root / "polyfun" / "by_chrom"
+    polyfun_by_chrom.mkdir(parents=True, exist_ok=True)
+    pf_floor = 4.0e-9
+    enriched_indices = {3, 18, 25 + 4, 25 + 22, 25 + 30 + 12 + 8}
+    pf_snpvar = [
+        pf_floor * (12.0 if idx_i in enriched_indices else 1.0)
+        for idx_i in range(total_m)
+    ]
+    pf_chrom_counts: dict[str, int] = {}
+    for chrom_key in sorted(set(panel_contigs), key=int):
+        idxs_c = [i for i, c in enumerate(panel_contigs) if c == chrom_key]
+        pq.write_table(
+            pa.table({
+                "BP": pa.array([panel_pos[i] for i in idxs_c], type=pa.int64()),
+                "A1": [panel_ref[i] for i in idxs_c],
+                "A2": [panel_alt[i] for i in idxs_c],
+                "SNPVAR": pa.array([pf_snpvar[i] for i in idxs_c], type=pa.float64()),
+            }),
+            polyfun_by_chrom / f"chr{chrom_key}.parquet",
+        )
+        pf_chrom_counts[chrom_key] = len(idxs_c)
+    (ref_root / "polyfun" / "polyfun_meta.json").write_text(
+        json.dumps({
+            "source": "synthetic_fixture",
+            "genome_build": "GRCh37",
+            "total_variants": total_m,
+            "truncation_q": 100.0,
+            "min_snpvar_scaled": pf_floor,
+            "max_snpvar_scaled": pf_floor * 12.0,
+            "chrom_counts": pf_chrom_counts,
+        }, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
     rng = np.random.default_rng(20261117)
     n_samples = 20_000
     se_val = 1.0 / math.sqrt(n_samples)

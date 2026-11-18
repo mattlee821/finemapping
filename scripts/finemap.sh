@@ -60,8 +60,12 @@ Single-GWAS / filter options:
   --gene-id ID               Optional UniProt ID or HGNC gene symbol for cis_gene
 
 Fine-mapping & reference options:
+  --methods LIST             Methods to run, space/comma-separated (default: "p-ld susie-rss susie-rrss carma polyfun")
+  --output-format FMT        Method file format: rda|rds|both (default: rda)
+  --compress COMP            Compression for saved method files: xz|gzip (default: xz)
   --ld-pop POP               Pan-UKB LD population: AFR|AMR|CSA|EAS|EUR|MID (default: EUR)
   --reference-root DIR       Reference root (default: $GWASFM_REFERENCE_ROOT)
+  --bm-path DIR              Optional local BlockMatrix directory override (defaults to live S3)
   --exclude-mhc              Exclude extended MHC (chr6:25.5-34.0 Mb GRCh38)
   --significance-lp FLOAT    Significance gate in -log10(P) (default: 7.30103 = P <= 5e-8)
   --cis-significance-lp FLT  Optional cis_gene significance gate override
@@ -95,8 +99,12 @@ QC=""
 TRAIT=""
 ANCESTRY=""
 GENE_ID=""
+METHODS_SPEC="p_ld,susie_rss,susie_rrss,carma,polyfun"
+OUTPUT_FORMAT="rda"
+COMPRESS_MODE="xz"
 LD_POP="EUR"
 REF_ROOT="${GWASFM_REFERENCE_ROOT}"
+BM_PATH=""
 EXCLUDE_MHC="false"
 SIG_LP=""
 CIS_SIG_LP=""
@@ -128,8 +136,12 @@ while [[ $# -gt 0 ]]; do
     --trait) TRAIT="$2"; shift 2 ;;
     --ancestry) ANCESTRY="$2"; shift 2 ;;
     --gene-id|--gene_id) GENE_ID="$2"; shift 2 ;;
+    --methods) METHODS_SPEC="$2"; shift 2 ;;
+    --output-format|--output_format) OUTPUT_FORMAT="$2"; shift 2 ;;
+    --compress) COMPRESS_MODE="$2"; shift 2 ;;
     --ld-pop|--population) LD_POP="$2"; shift 2 ;;
     --reference-root) REF_ROOT="$2"; shift 2 ;;
+    --bm-path|--bm_path) BM_PATH="$2"; shift 2 ;;
     --exclude-mhc|--exclude_mhc) EXCLUDE_MHC="true"; shift ;;
     --significance-lp) SIG_LP="$2"; shift 2 ;;
     --cis-significance-lp) CIS_SIG_LP="$2"; shift 2 ;;
@@ -174,12 +186,20 @@ REF_ROOT="$(resolve_abs "$REF_ROOT")"
 [[ -n "$METADATA" ]] && METADATA="$(resolve_abs "$METADATA")"
 [[ -n "$QC" ]] && QC="$(resolve_abs "$QC")"
 [[ -n "$LOCAL_LD_PANEL" ]] && LOCAL_LD_PANEL="$(resolve_abs "$LOCAL_LD_PANEL")"
+[[ -n "$BM_PATH" ]] && BM_PATH="$(resolve_abs "$BM_PATH")"
 
 CHAIN="${REF_ROOT}/genome/hg38ToHg19.over.chain.gz"
 FASTA="${REF_ROOT}/genome/GRCh37.fa"
 FAI="${REF_ROOT}/genome/GRCh37.fa.fai"
 GENE_ANNOT="${REF_ROOT}/annotation/gene_regions_GRCh38.tsv"
 PANUKB_DIR="${REF_ROOT}/panukb"
+POLYFUN_DIR=""
+for pf_cand in "${REF_ROOT}/polyfun" "${GWASFM_CACHE_DIR}/reference/polyfun" "${HOME}/.cache/gwasfinemapping/reference/polyfun"; do
+  if [[ -d "${pf_cand}/by_chrom" ]]; then
+    POLYFUN_DIR="${pf_cand}"
+    break
+  fi
+done
 
 for req in "$CHAIN" "$FASTA" "$FAI"; do
   if [[ ! -f "$req" ]]; then
@@ -204,7 +224,8 @@ fi
 RUN_ID="${SLURM_JOB_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
 LOG_ROOT="${GWASFM_CACHE_DIR}/logs/runs/${RUN_ID}"
 NXF_LOG="${LOG_ROOT}/nextflow.${RUN_ID}.log"
-mkdir -p "$OUTDIR" "$LOG_ROOT" "${GWASFM_NXF_WORK}"
+export NXF_CACHE_DIR="${GWASFM_NXF_WORK}/nxf-cache"
+mkdir -p "$OUTDIR" "$LOG_ROOT" "${GWASFM_NXF_WORK}" "${NXF_CACHE_DIR}"
 
 # Fast preflight path on host: skip Nextflow JVM startup for --dry-run or when all rows are already complete
 SKIP_NXF=0
@@ -220,6 +241,8 @@ if [[ -z "$CONTAINER_ENGINE" && -z "${GWASFM_CONTAINER:-}" ]]; then
     --grch37-fasta "$FASTA"
     --cache-dir "${GWASFM_CACHE_DIR}"
     --population "$LD_POP"
+    --methods "$METHODS_SPEC"
+    --output-format "$OUTPUT_FORMAT"
     --significance-lp "${SIG_LP:-7.301029995664}"
     --region-flank-bp "${FLANK_BP:-1500000}"
     --max-region-width-bp 9500000
@@ -227,7 +250,7 @@ if [[ -z "$CONTAINER_ENGINE" && -z "${GWASFM_CONTAINER:-}" ]]; then
     --exclude-mhc "$EXCLUDE_MHC"
     --max-loci "${MAX_LOCI:-0}"
     --max-causal 10
-    --max-iter 200
+    --max-iter 50
     --row-limit "$ROW_LIMIT"
     --force "$FORCE"
     --dry-run "$DRY_RUN"
@@ -237,6 +260,7 @@ if [[ -z "$CONTAINER_ENGINE" && -z "${GWASFM_CONTAINER:-}" ]]; then
   )
   [[ -f "$GENE_ANNOT" ]] && PREP_CMD+=(--gene-annotation "$GENE_ANNOT")
   [[ -d "$PANUKB_DIR" ]] && PREP_CMD+=(--panukb-dir "$PANUKB_DIR")
+  [[ -n "$POLYFUN_DIR" ]] && PREP_CMD+=(--polyfun-dir "$POLYFUN_DIR")
   [[ -n "$INPUT_DIR" ]] && PREP_CMD+=(--input-dir "$INPUT_DIR")
   [[ -n "$MANIFEST" ]] && PREP_CMD+=(--manifest "$MANIFEST")
   [[ -n "$VCF" ]] && PREP_CMD+=(--vcf "$VCF")
@@ -250,6 +274,7 @@ if [[ -z "$CONTAINER_ENGINE" && -z "${GWASFM_CONTAINER:-}" ]]; then
   [[ -n "$GENE_ID" ]] && PREP_CMD+=(--gene-id "$GENE_ID")
   [[ -n "$CIS_SIG_LP" ]] && PREP_CMD+=(--cis-significance-lp "$CIS_SIG_LP")
   [[ -n "$LOCAL_LD_PANEL" ]] && PREP_CMD+=(--local-ld-panel "$LOCAL_LD_PANEL")
+  [[ -n "$BM_PATH" ]] && PREP_CMD+=(--bm-path "$BM_PATH")
 
   if "${PREP_CMD[@]}" >/dev/null 2>&1; then
     if [[ "$DRY_RUN" == "true" ]]; then
@@ -270,6 +295,7 @@ NF_CMD=(
   run "${ROOT_DIR}/finemapping.nf"
   -profile "$PROFILE"
   -work-dir "${GWASFM_NXF_WORK}"
+  -with-trace "${LOG_ROOT}/trace.tsv"
   --outdir "$OUTDIR"
   --log_root "$LOG_ROOT"
   --chain "$CHAIN"
@@ -277,6 +303,9 @@ NF_CMD=(
   --grch37_fai "$FAI"
   --cache_dir "${GWASFM_CACHE_DIR}"
   --population "$LD_POP"
+  --methods "$METHODS_SPEC"
+  --output_format "$OUTPUT_FORMAT"
+  --compress "$COMPRESS_MODE"
   --exclude_mhc "$EXCLUDE_MHC"
   --row_limit "$ROW_LIMIT"
   --force "$FORCE"
@@ -288,6 +317,7 @@ NF_CMD=(
 
 [[ -f "$GENE_ANNOT" ]] && NF_CMD+=(--gene_annotation "$GENE_ANNOT")
 [[ -d "$PANUKB_DIR" ]] && NF_CMD+=(--panukb_dir "$PANUKB_DIR")
+[[ -n "$POLYFUN_DIR" ]] && NF_CMD+=(--polyfun_dir "$POLYFUN_DIR")
 [[ -n "$INPUT_DIR" ]] && NF_CMD+=(--input_dir "$INPUT_DIR")
 [[ -n "$MANIFEST" ]] && NF_CMD+=(--manifest "$MANIFEST")
 [[ -n "$VCF" ]] && NF_CMD+=(--vcf "$VCF")
@@ -305,6 +335,7 @@ NF_CMD=(
 [[ -n "$MAX_LOCI" ]] && NF_CMD+=(--max_loci "$MAX_LOCI")
 [[ -n "$MAX_FORKS" ]] && NF_CMD+=(--max_forks "$MAX_FORKS")
 [[ -n "$LOCAL_LD_PANEL" ]] && NF_CMD+=(--local_ld_panel "$LOCAL_LD_PANEL")
+[[ -n "$BM_PATH" ]] && NF_CMD+=(--bm_path "$BM_PATH")
 [[ "$RESUME" -eq 1 ]] && NF_CMD+=(-resume)
 
 nf_status=0

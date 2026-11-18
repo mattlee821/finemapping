@@ -211,10 +211,11 @@ restore_r_packages() {
     export RENV_PATHS_LIBRARY="$library_root"
     export RENV_CONFIG_PROMPT=FALSE
     export RENV_CONFIG_SYNCHRONIZED_CHECK=FALSE
-    Rscript -e 'renv::restore(prompt = FALSE)'
-    r_lib="$(Rscript -e 'cat(.libPaths()[1])')"
+    GWASFM_FORCE_RENV=1 Rscript -e 'renv::restore(prompt = FALSE)'
+    r_lib="$(GWASFM_FORCE_RENV=1 Rscript -e 'cat(.libPaths()[1])')"
+    R_PROFILE_USER="" Rscript "${ROOT_DIR}/scripts/install_carma.R" "$r_lib"
     R_PROFILE_USER="" R CMD INSTALL --no-multiarch --library="$r_lib" .
-    Rscript -e 'stopifnot(requireNamespace("susieR", quietly = TRUE), requireNamespace("jsonlite", quietly = TRUE), requireNamespace("gwasfinemapping", quietly = TRUE)); cat("R packages verified: gwasfinemapping", as.character(packageVersion("gwasfinemapping")), "| susieR", as.character(packageVersion("susieR")), "\n")'
+    Rscript -e 'stopifnot(requireNamespace("susieR", quietly = TRUE), requireNamespace("CARMA", quietly = TRUE), requireNamespace("jsonlite", quietly = TRUE), requireNamespace("gwasfinemapping", quietly = TRUE)); cat("R packages verified: gwasfinemapping", as.character(packageVersion("gwasfinemapping")), "| susieR", as.character(packageVersion("susieR")), "| CARMA", as.character(packageVersion("CARMA")), "\n")'
   )
 }
 

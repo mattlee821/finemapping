@@ -1,4 +1,11 @@
-read_npy_float64_matrix <- function(npy_path) {
+read_npy_float64_matrix <- function(npy_path, ids = NULL, prevalidated = FALSE,
+                                    scale = 1) {
+  if (length(scale) != 1L || !is.numeric(scale) || is.na(scale) ||
+      !is.finite(scale) || scale <= 0) {
+    stop("`scale` must be one positive finite number.", call. = FALSE)
+  }
+  scale <- as.numeric(scale)
+
   con <- file(npy_path, "rb")
   on.exit(close(con), add = TRUE)
 
@@ -49,27 +56,87 @@ read_npy_float64_matrix <- function(npy_path) {
     stop("Expected a 2D .npy matrix: ", npy_path, call. = FALSE)
   }
 
+  if (!is.null(ids) && (dims[[1L]] != length(ids) || dims[[2L]] != length(ids))) {
+    stop(".npy LD matrix dimensions (", dims[[1L]], "x", dims[[2L]],
+         ") do not match companion ID count (", length(ids), ").",
+         call. = FALSE)
+  }
+
   n_total <- as.numeric(dims[[1L]]) * as.numeric(dims[[2L]])
-  values <- readBin(
-    con,
-    what = "numeric",
-    n = n_total,
-    size = 8L,
-    endian = "little"
-  )
-  if (length(values) != n_total) {
-    stop("Truncated .npy matrix payload: ", npy_path, call. = FALSE)
+  has_c_fast <- is.loaded("gwasfm_frob_and_scale_inplace",
+                          PACKAGE = "gwasfinemapping")
+
+  if (scale != 1 && !has_c_fast) {
+    values <- numeric(n_total)
+    frob_sq <- 0
+    chunk_n <- 16777216
+    pos <- 1
+    while (pos <= n_total) {
+      take <- min(chunk_n, n_total - pos + 1)
+      ch <- readBin(con, what = "numeric", n = take, size = 8L,
+                    endian = "little")
+      if (length(ch) != take) {
+        stop("Truncated .npy matrix payload: ", npy_path, call. = FALSE)
+      }
+      frob_sq <- frob_sq + sum(ch * ch)
+      ch <- ch * scale
+      values[seq.int(pos, length.out = take)] <- ch
+      pos <- pos + take
+    }
+    rm(ch)
+  } else {
+    values <- readBin(
+      con,
+      what = "numeric",
+      n = n_total,
+      size = 8L,
+      endian = "little"
+    )
+    if (length(values) != n_total) {
+      stop("Truncated .npy matrix payload: ", npy_path, call. = FALSE)
+    }
+    frob_sq <- if (scale != 1 && has_c_fast) {
+      .Call("gwasfm_frob_and_scale_inplace", values, scale,
+            PACKAGE = "gwasfinemapping")
+    } else {
+      NULL
+    }
   }
 
   if (fortran_order) {
-    dim(values) <- c(dims[[1L]], dims[[2L]])
+    attr(values, "dim") <- c(dims[[1L]], dims[[2L]])
+    if (!is.null(ids)) {
+      attr(values, "dimnames") <- list(ids, ids)
+    }
+    if (isTRUE(prevalidated)) {
+      attr(values, "gwasfm_prevalidated") <- TRUE
+    }
+    if (scale != 1) {
+      attr(values, "ld_scale") <- scale
+      attr(values, "frob_sq") <- frob_sq
+      d_vec <- rep(scale, dims[[1L]])
+      if (!is.null(ids)) names(d_vec) <- ids
+      attr(values, "d") <- d_vec
+      attr(values, "scaled:scale") <- rep(1, dims[[1L]])
+    }
     values
   } else {
-    matrix(values, nrow = dims[[1L]], ncol = dims[[2L]], byrow = TRUE)
+    mat <- matrix(values, nrow = dims[[1L]], ncol = dims[[2L]], byrow = TRUE)
+    if (!is.null(ids)) {
+      dimnames(mat) <- list(ids, ids)
+    }
+    if (isTRUE(prevalidated)) {
+      attr(mat, "gwasfm_prevalidated") <- TRUE
+    }
+    if (scale != 1) {
+      attr(mat, "ld_scale") <- scale
+      attr(mat, "frob_sq") <- frob_sq
+    }
+    mat
   }
 }
 
-read_ld_matrix <- function(matrix_path, ids_path = NULL) {
+read_ld_matrix <- function(matrix_path, ids_path = NULL, scale = 1) {
   if (!is.character(matrix_path) || length(matrix_path) != 1L ||
       !file.exists(matrix_path)) {
     stop("LD matrix file does not exist: ", matrix_path, call. = FALSE)
@@ -87,15 +154,15 @@ read_ld_matrix <- function(matrix_path, ids_path = NULL) {
     }
     ids <- readLines(resolved_ids, warn = FALSE, encoding = "UTF-8")
     ids <- ids[nzchar(ids)]
-    R <- read_npy_float64_matrix(matrix_path)
-    if (nrow(R) != length(ids) || ncol(R) != length(ids)) {
-      stop(".npy LD matrix dimensions (", nrow(R), "x", ncol(R),
-           ") do not match companion ID count (", length(ids), ").",
-           call. = FALSE)
-    }
-    rownames(R) <- ids
-    colnames(R) <- ids
-    return(R)
+    prep_qc_file <- file.path(dirname(matrix_path), "locus_prep_qc.json")
+    val_json_file <- file.path(dirname(matrix_path), "validation.json")
+    is_preval <- file.exists(prep_qc_file) || file.exists(val_json_file)
+    return(read_npy_float64_matrix(
+      matrix_path,
+      ids = ids,
+      prevalidated = is_preval,
+      scale = scale
+    ))
   }
 
   matrix_frame <- utils::read.delim(
@@ -106,6 +173,12 @@ read_ld_matrix <- function(matrix_path, ids_path = NULL) {
   ids <- as.character(matrix_frame[[1L]])
   R <- as.matrix(matrix_frame[-1L])
   storage.mode(R) <- "double"
+  if (scale != 1) {
+    frob_sq <- sum(R * R)
+    R <- R * as.numeric(scale)
+    attr(R, "ld_scale") <- as.numeric(scale)
+    attr(R, "frob_sq") <- frob_sq
+  }
   rownames(R) <- ids
   colnames(R) <- names(matrix_frame)[-1L]
   R

@@ -18,29 +18,42 @@ summarize_gwas_dir <- function(gwas_dir) {
   rss_path <- file.path(gwas_dir, "methods", "susie-rss.rda")
   rrss_path <- file.path(gwas_dir, "methods", "susie-rrss.rda")
   pld_path <- file.path(gwas_dir, "methods", "p-ld.rda")
+  carma_path <- file.path(gwas_dir, "methods", "carma.rda")
+  polyfun_path <- file.path(gwas_dir, "methods", "polyfun.rda")
 
-  for (req in c(qc_path, rss_path, rrss_path, pld_path)) {
+  for (req in c(qc_path, rss_path, rrss_path, pld_path, carma_path, polyfun_path)) {
     if (!file.exists(req)) {
       stop("Missing expected output file: ", req, call. = FALSE)
     }
+  }
+  if (file.exists(file.path(gwas_dir, "methods", "p-value.rda"))) {
+    stop("Deprecated output file p-value.rda must not be generated.", call. = FALSE)
   }
 
   qc <- jsonlite::fromJSON(qc_path, simplifyVector = FALSE)
   e_rss <- new.env(parent = emptyenv()); load(rss_path, envir = e_rss)
   e_rrss <- new.env(parent = emptyenv()); load(rrss_path, envir = e_rrss)
   e_pld <- new.env(parent = emptyenv()); load(pld_path, envir = e_pld)
+  e_carma <- new.env(parent = emptyenv()); load(carma_path, envir = e_carma)
+  e_pf <- new.env(parent = emptyenv()); load(polyfun_path, envir = e_pf)
 
   s_rss <- e_rss$susie_rss
   s_rrss <- e_rrss$susie_rrss
   s_pld <- e_pld$p_ld
+  s_carma <- e_carma$carma
+  s_pf <- e_pf$polyfun
 
   regions <- list()
   for (rid in sort(names(s_rss$regions))) {
     r_rss <- s_rss$regions[[rid]]$result
     r_rrss <- s_rrss$regions[[rid]]$result
+    r_carma <- s_carma$regions[[rid]]$result
+    r_pf <- s_pf$regions[[rid]]$result
     df_pld <- s_pld$regions[[rid]]$result
     v_rss <- r_rss$variants
     v_rrss <- r_rrss$variants
+    v_carma <- r_carma$variants
+    v_pf <- r_pf$variants
 
     # Capture top 25 variants by SuSiE-RSS PIP (deterministic tie-break by GWAS_VARIANT_ID)
     ord <- order(-v_rss$PIP, -v_rss$LP, v_rss$GWAS_VARIANT_ID)
@@ -52,8 +65,12 @@ summarize_gwas_dir <- function(gwas_dir) {
       lp = round(as.numeric(v_rss$LP[keep]), 6),
       pip_rss = round(as.numeric(v_rss$PIP[keep]), 6),
       pip_rrss = round(as.numeric(v_rrss$PIP[keep]), 6),
+      pip_carma = round(as.numeric(v_carma$PIP[keep]), 6),
+      pip_polyfun = round(as.numeric(v_pf$PIP[keep]), 6),
       cs_rss = ifelse(is.na(v_rss$credible_set_id[keep]), "", as.character(v_rss$credible_set_id[keep])),
       cs_rrss = ifelse(is.na(v_rrss$credible_set_id[keep]), "", as.character(v_rrss$credible_set_id[keep])),
+      cs_carma = ifelse(is.na(v_carma$credible_set_id[keep]), "", as.character(v_carma$credible_set_id[keep])),
+      cs_polyfun = ifelse(is.na(v_pf$credible_set_id[keep]), "", as.character(v_pf$credible_set_id[keep])),
       stringsAsFactors = FALSE
     )
 
@@ -70,8 +87,12 @@ summarize_gwas_dir <- function(gwas_dir) {
       pld_selected = pld_sel,
       cs_count_rss = nrow(r_rss$credible_sets),
       cs_count_rrss = nrow(r_rrss$credible_sets),
+      cs_count_carma = nrow(r_carma$credible_sets),
+      cs_count_polyfun = nrow(r_pf$credible_sets),
       converged_rss = isTRUE(r_rss$diagnostics$converged),
       converged_rrss = isTRUE(r_rrss$diagnostics$converged),
+      converged_carma = isTRUE(r_carma$diagnostics$converged),
+      converged_polyfun = isTRUE(r_pf$diagnostics$converged),
       top_variants = sentinel_df
     )
   }
@@ -114,7 +135,7 @@ compare_summaries <- function(actual, expected, pip_tol = 1e-3, z_tol = 1e-4) {
   for (rid in exp_regs) {
     ar <- actual$regions[[rid]]
     er <- expected$regions[[rid]]
-    for (rf in c("region_type", "variants_matched", "cs_count_rss", "cs_count_rrss")) {
+    for (rf in c("region_type", "variants_matched", "cs_count_rss", "cs_count_rrss", "cs_count_carma", "cs_count_polyfun")) {
       if (!identical(as.integer_or_char <- as.character(ar[[rf]]), as.character(er[[rf]]))) {
         diffs <- c(diffs, sprintf("%s.%s: actual=%s vs expected=%s", rid, rf, ar[[rf]], er[[rf]]))
       }
@@ -128,6 +149,8 @@ compare_summaries <- function(actual, expected, pip_tol = 1e-3, z_tol = 1e-4) {
     max_dz <- max(abs(as.numeric(at$ez) - as.numeric(et$ez)))
     max_dpip_rss <- max(abs(as.numeric(at$pip_rss) - as.numeric(et$pip_rss)))
     max_dpip_rrss <- max(abs(as.numeric(at$pip_rrss) - as.numeric(et$pip_rrss)))
+    max_dpip_carma <- max(abs(as.numeric(at$pip_carma) - as.numeric(et$pip_carma)))
+    max_dpip_pf <- max(abs(as.numeric(at$pip_polyfun) - as.numeric(et$pip_polyfun)))
     if (!is.finite(max_dz) || max_dz > z_tol) {
       diffs <- c(diffs, sprintf("%s: max |dZ| = %.6f > %.6f", rid, max_dz, z_tol))
     }
@@ -136,6 +159,12 @@ compare_summaries <- function(actual, expected, pip_tol = 1e-3, z_tol = 1e-4) {
     }
     if (!is.finite(max_dpip_rrss) || max_dpip_rrss > pip_tol) {
       diffs <- c(diffs, sprintf("%s: max |dPIP_rrss| = %.6f > %.6f", rid, max_dpip_rrss, pip_tol))
+    }
+    if (!is.finite(max_dpip_carma) || max_dpip_carma > pip_tol) {
+      diffs <- c(diffs, sprintf("%s: max |dPIP_carma| = %.6f > %.6f", rid, max_dpip_carma, pip_tol))
+    }
+    if (!is.finite(max_dpip_pf) || max_dpip_pf > pip_tol) {
+      diffs <- c(diffs, sprintf("%s: max |dPIP_polyfun| = %.6f > %.6f", rid, max_dpip_pf, pip_tol))
     }
   }
   diffs

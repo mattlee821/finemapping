@@ -1,7 +1,7 @@
 {
   "study_id": "sun_synthetic",
   "gwas_id": "P00001_olink",
-  "overall_status": "PASS",
+  "overall_status": "WARN_DIAGNOSTIC_FLAGS",
   "ancestry_ld_status": "matched",
   "genomewide_significant_variants": 54,
   "analyzed_regions_count": 3,
@@ -18,8 +18,12 @@
       },
       "cs_count_rss": 2,
       "cs_count_rrss": 2,
+      "cs_count_carma": 2,
+      "cs_count_polyfun": 2,
       "converged_rss": true,
       "converged_rrss": true,
+      "converged_carma": false,
+      "converged_polyfun": true,
       "top_variants": [
         {
           "gwas_variant_id": "2:3520000:T:C",
@@ -28,8 +32,12 @@
           "lp": 16.9375,
           "pip_rss": 0.9851,
           "pip_rrss": 0.9851,
+          "pip_carma": 0.982,
+          "pip_polyfun": 0.9851,
           "cs_rss": "L1",
-          "cs_rrss": "L1"
+          "cs_rrss": "L1",
+          "cs_carma": "L1",
+          "cs_polyfun": "L1"
         },
         {
           "gwas_variant_id": "2:5335000:T:C",
@@ -38,8 +46,12 @@
           "lp": 13.5085,
           "pip_rss": 0.8397,
           "pip_rrss": 0.8396,
+          "pip_carma": 0.8317,
+          "pip_polyfun": 0.8397,
           "cs_rss": "L2",
-          "cs_rrss": "L2"
+          "cs_rrss": "L2",
+          "cs_carma": "L2",
+          "cs_polyfun": "L2"
         },
         {
           "gwas_variant_id": "2:5330000:T:C",
@@ -48,8 +60,12 @@
           "lp": 12.6901,
           "pip_rss": 0.1375,
           "pip_rrss": 0.1375,
+          "pip_carma": 0.1761,
+          "pip_polyfun": 0.1375,
           "cs_rss": "L2",
-          "cs_rrss": "L2"
+          "cs_rrss": "L2",
+          "cs_carma": "L2",
+          "cs_polyfun": "L2"
         },
         {
           "gwas_variant_id": "2:5340000:T:C",
@@ -58,8 +74,12 @@
           "lp": 11.8549,
           "pip_rss": 0.0217,
           "pip_rrss": 0.0217,
+          "pip_carma": 0.0505,
+          "pip_polyfun": 0.0217,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:3525000:T:C",
@@ -68,8 +88,12 @@
           "lp": 14.7446,
           "pip_rss": 0.0075,
           "pip_rrss": 0.0075,
+          "pip_carma": 0.0277,
+          "pip_polyfun": 0.0075,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:3515000:T:C",
@@ -78,8 +102,12 @@
           "lp": 14.7355,
           "pip_rss": 0.0074,
           "pip_rrss": 0.0074,
+          "pip_carma": 0.0278,
+          "pip_polyfun": 0.0074,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5325000:T:C",
@@ -88,8 +116,12 @@
           "lp": 10.3973,
           "pip_rss": 0.0009,
           "pip_rrss": 0.0009,
+          "pip_carma": 0.0159,
+          "pip_polyfun": 0.0009,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5345000:T:C",
@@ -98,8 +130,12 @@
           "lp": 9.7009,
           "pip_rss": 0.0002,
           "pip_rrss": 0.0002,
+          "pip_carma": 0.0126,
+          "pip_polyfun": 0.0002,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5320000:T:C",
@@ -108,8 +144,12 @@
           "lp": 8.8968,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.012,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:3530000:T:C",
@@ -118,8 +158,12 @@
           "lp": 12.2587,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.012,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5350000:T:C",
@@ -128,8 +172,12 @@
           "lp": 8.6767,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0124,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:3510000:T:C",
@@ -138,8 +186,12 @@
           "lp": 11.6891,
           "pip_rss": 8e-06,
           "pip_rrss": 9e-06,
+          "pip_carma": 0.0119,
+          "pip_polyfun": 8e-06,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5315000:T:C",
@@ -148,8 +200,12 @@
           "lp": 7.3028,
           "pip_rss": 1e-06,
           "pip_rrss": 1e-06,
+          "pip_carma": 0.0092,
+          "pip_polyfun": 1e-06,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:3505000:T:C",
@@ -158,8 +214,12 @@
           "lp": 10.6168,
           "pip_rss": 1e-06,
           "pip_rrss": 1e-06,
+          "pip_carma": 0.0108,
+          "pip_polyfun": 1e-06,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5355000:T:C",
@@ -168,8 +228,12 @@
           "lp": 6.8739,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0086,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:3535000:T:C",
@@ -178,8 +242,12 @@
           "lp": 10.1892,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0093,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5360000:T:C",
@@ -188,8 +256,12 @@
           "lp": 6.0729,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0085,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5310000:T:C",
@@ -198,8 +270,12 @@
           "lp": 5.3858,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0084,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5305000:T:C",
@@ -208,8 +284,12 @@
           "lp": 5.1569,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0074,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:3540000:T:C",
@@ -218,8 +298,12 @@
           "lp": 8.4487,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.008,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5365000:T:C",
@@ -228,8 +312,12 @@
           "lp": 4.7614,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.007,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:3500000:T:C",
@@ -238,8 +326,12 @@
           "lp": 8.1042,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0075,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5370000:T:C",
@@ -248,8 +340,12 @@
           "lp": 4.5112,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0092,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:3545000:T:C",
@@ -258,8 +354,12 @@
           "lp": 7.5606,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0101,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "2:5300000:T:C",
@@ -268,8 +368,12 @@
           "lp": 3.9051,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0064,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         }
       ]
     },
@@ -283,8 +387,12 @@
       },
       "cs_count_rss": 1,
       "cs_count_rrss": 1,
+      "cs_count_carma": 1,
+      "cs_count_polyfun": 1,
       "converged_rss": true,
       "converged_rrss": true,
+      "converged_carma": true,
+      "converged_polyfun": true,
       "top_variants": [
         {
           "gwas_variant_id": "6:31248000:T:C",
@@ -293,8 +401,12 @@
           "lp": 24.371,
           "pip_rss": 0.9999,
           "pip_rrss": 0.9999,
+          "pip_carma": 0.9998,
+          "pip_polyfun": 0.9999,
           "cs_rss": "L1",
-          "cs_rrss": "L1"
+          "cs_rrss": "L1",
+          "cs_carma": "L1",
+          "cs_polyfun": "L1"
         },
         {
           "gwas_variant_id": "6:31254000:T:C",
@@ -303,8 +415,12 @@
           "lp": 20.2139,
           "pip_rss": 0.0001,
           "pip_rrss": 0.0001,
+          "pip_carma": 0.0332,
+          "pip_polyfun": 0.0001,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31242000:T:C",
@@ -313,8 +429,12 @@
           "lp": 17.9665,
           "pip_rss": 1e-06,
           "pip_rrss": 1e-06,
+          "pip_carma": 0.0193,
+          "pip_polyfun": 1e-06,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31236000:T:C",
@@ -323,8 +443,12 @@
           "lp": 15.321,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.017,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31260000:T:C",
@@ -333,8 +457,12 @@
           "lp": 14.5893,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0158,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31230000:T:C",
@@ -343,8 +471,12 @@
           "lp": 12.1834,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0145,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31266000:T:C",
@@ -353,8 +485,12 @@
           "lp": 11.3075,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0141,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31272000:T:C",
@@ -363,8 +499,12 @@
           "lp": 10.4487,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0149,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31224000:T:C",
@@ -373,8 +513,12 @@
           "lp": 9.2834,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0128,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31278000:T:C",
@@ -383,8 +527,12 @@
           "lp": 7.6823,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0123,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31218000:T:C",
@@ -393,8 +541,12 @@
           "lp": 7.3771,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0121,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31284000:T:C",
@@ -403,8 +555,12 @@
           "lp": 6.2195,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0119,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31212000:T:C",
@@ -413,8 +569,12 @@
           "lp": 5.6204,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0119,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31206000:T:C",
@@ -423,8 +583,12 @@
           "lp": 5.0979,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0115,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31290000:T:C",
@@ -433,8 +597,12 @@
           "lp": 4.7636,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0115,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31296000:T:C",
@@ -443,8 +611,12 @@
           "lp": 4.2937,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0115,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31200000:T:C",
@@ -453,8 +625,12 @@
           "lp": 3.9027,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.011,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31302000:T:C",
@@ -463,8 +639,12 @@
           "lp": 3.0456,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0111,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31308000:T:C",
@@ -473,8 +653,12 @@
           "lp": 2.5543,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0108,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "6:31314000:T:C",
@@ -483,8 +667,12 @@
           "lp": 2.0563,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0106,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         }
       ]
     },
@@ -498,8 +686,12 @@
       },
       "cs_count_rss": 2,
       "cs_count_rrss": 2,
+      "cs_count_carma": 2,
+      "cs_count_polyfun": 2,
       "converged_rss": true,
       "converged_rrss": true,
+      "converged_carma": true,
+      "converged_polyfun": true,
       "top_variants": [
         {
           "gwas_variant_id": "1:2992000:T:C",
@@ -508,8 +700,12 @@
           "lp": 32.1015,
           "pip_rss": 0.9924,
           "pip_rrss": 0.9924,
+          "pip_carma": 0.9945,
+          "pip_polyfun": 0.9924,
           "cs_rss": "L1",
-          "cs_rrss": "L1"
+          "cs_rrss": "L1",
+          "cs_carma": "L1",
+          "cs_polyfun": "L1"
         },
         {
           "gwas_variant_id": "1:3052000:T:C",
@@ -518,8 +714,12 @@
           "lp": 25.939,
           "pip_rss": 0.66,
           "pip_rrss": 0.6599,
+          "pip_carma": 0.6325,
+          "pip_polyfun": 0.66,
           "cs_rss": "L2",
-          "cs_rrss": "L2"
+          "cs_rrss": "L2",
+          "cs_carma": "L2",
+          "cs_polyfun": "L2"
         },
         {
           "gwas_variant_id": "1:3048000:T:C",
@@ -528,8 +728,12 @@
           "lp": 26.2242,
           "pip_rss": 0.1723,
           "pip_rrss": 0.1723,
+          "pip_carma": 0.2208,
+          "pip_polyfun": 0.1723,
           "cs_rss": "L2",
-          "cs_rrss": "L2"
+          "cs_rrss": "L2",
+          "cs_carma": "L2",
+          "cs_polyfun": "L2"
         },
         {
           "gwas_variant_id": "1:3056000:T:C",
@@ -538,8 +742,12 @@
           "lp": 24.0322,
           "pip_rss": 0.1544,
           "pip_rrss": 0.1544,
+          "pip_carma": 0.2015,
+          "pip_polyfun": 0.1544,
           "cs_rss": "L2",
-          "cs_rrss": "L2"
+          "cs_rrss": "L2",
+          "cs_carma": "L2",
+          "cs_polyfun": "L2"
         },
         {
           "gwas_variant_id": "1:3044000:T:C",
@@ -548,8 +756,12 @@
           "lp": 25.7484,
           "pip_rss": 0.0126,
           "pip_rrss": 0.0126,
+          "pip_carma": 0.0607,
+          "pip_polyfun": 0.0126,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:2988000:T:C",
@@ -558,8 +770,12 @@
           "lp": 28.3732,
           "pip_rss": 0.0061,
           "pip_rrss": 0.0061,
+          "pip_carma": 0.026,
+          "pip_polyfun": 0.0061,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:2996000:T:C",
@@ -568,8 +784,12 @@
           "lp": 29.4029,
           "pip_rss": 0.0015,
           "pip_rrss": 0.0015,
+          "pip_carma": 0.0171,
+          "pip_polyfun": 0.0015,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3060000:T:C",
@@ -578,8 +798,12 @@
           "lp": 19.5202,
           "pip_rss": 0.0004,
           "pip_rrss": 0.0004,
+          "pip_carma": 0.0156,
+          "pip_polyfun": 0.0004,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3064000:T:C",
@@ -588,8 +812,12 @@
           "lp": 18.5617,
           "pip_rss": 0.0003,
           "pip_rrss": 0.0003,
+          "pip_carma": 0.0242,
+          "pip_polyfun": 0.0003,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3040000:T:C",
@@ -598,8 +826,12 @@
           "lp": 22.8579,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0127,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3000000:T:C",
@@ -608,8 +840,12 @@
           "lp": 28.1214,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0153,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3036000:T:C",
@@ -618,8 +854,12 @@
           "lp": 22.7682,
           "pip_rss": 4e-06,
           "pip_rrss": 4e-06,
+          "pip_carma": 0.0129,
+          "pip_polyfun": 4e-06,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3068000:T:C",
@@ -628,8 +868,12 @@
           "lp": 15.1962,
           "pip_rss": 3e-06,
           "pip_rrss": 3e-06,
+          "pip_carma": 0.0117,
+          "pip_polyfun": 3e-06,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:2984000:T:C",
@@ -638,8 +882,12 @@
           "lp": 23.2355,
           "pip_rss": 2e-06,
           "pip_rrss": 2e-06,
+          "pip_carma": 0.0102,
+          "pip_polyfun": 2e-06,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:2980000:T:C",
@@ -648,8 +896,12 @@
           "lp": 21.1924,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0111,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3032000:T:C",
@@ -658,8 +910,12 @@
           "lp": 21.661,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0098,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3072000:T:C",
@@ -668,8 +924,12 @@
           "lp": 12.7649,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.009,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3004000:T:C",
@@ -678,8 +938,12 @@
           "lp": 25.9397,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0112,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3028000:T:C",
@@ -688,8 +952,12 @@
           "lp": 22.7485,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0129,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3076000:T:C",
@@ -698,8 +966,12 @@
           "lp": 11.0465,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0081,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3024000:T:C",
@@ -708,8 +980,12 @@
           "lp": 21.3759,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0116,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3008000:T:C",
@@ -718,8 +994,12 @@
           "lp": 24.1896,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0095,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3020000:T:C",
@@ -728,8 +1008,12 @@
           "lp": 21.677,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0086,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3012000:T:C",
@@ -738,8 +1022,12 @@
           "lp": 24.3872,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0122,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "1:3016000:T:C",
@@ -748,8 +1036,12 @@
           "lp": 20.8462,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0075,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         }
       ]
     }

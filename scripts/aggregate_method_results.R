@@ -20,15 +20,44 @@ parse_bool <- function(val, default = FALSE) {
   tolower(as.character(val)) %in% c("1", "true", "yes", "y")
 }
 
+normalize_method_id <- function(x) {
+  x <- tolower(trimws(x))
+  x <- gsub("-", "_", x, fixed = TRUE)
+  if (x == "polyfun_susie") x <- "polyfun"
+  x
+}
+
 options <- parse_options(commandArgs(trailingOnly = TRUE))
 if (!"output_root" %in% names(options) || !dir.exists(options$output_root)) {
   stop("A valid --output-root is required.", call. = FALSE)
 }
 allow_empty <- parse_bool(options$allow_empty, default = FALSE)
+keep_rds <- parse_bool(options$keep_rds, default = FALSE)
+out_format <- tolower(options$format %||% "rda")
+`%||%` <- function(x, y) if (is.null(x) || !nzchar(x)) y else x
+out_format <- tolower(if (is.null(options$format) || !nzchar(options$format)) "rda" else options$format)
+if (!out_format %in% c("rda", "rds", "both")) {
+  stop("--format must be 'rda', 'rds', or 'both'.", call. = FALSE)
+}
+
 search_root <- if (!is.null(options$input_root) && nzchar(options$input_root)) {
   options$input_root
 } else {
   options$output_root
+}
+
+allowed_methods <- c("p_ld", "susie_rss", "susie_rrss", "carma", "polyfun")
+default_active <- c("p_ld", "susie_rss", "susie_rrss", "carma", "polyfun")
+requested_methods <- if (!is.null(options$methods) && nzchar(options$methods)) {
+  raw_m <- unlist(strsplit(options$methods, "[,[:space:]]+"))
+  raw_m <- raw_m[nzchar(raw_m)]
+  unique(vapply(raw_m, normalize_method_id, character(1)))
+} else {
+  NULL
+}
+if (!is.null(requested_methods) && any(!requested_methods %in% allowed_methods)) {
+  bad <- setdiff(requested_methods, allowed_methods)
+  stop("Unsupported method(s): ", paste(bad, collapse = ", "), call. = FALSE)
 }
 
 result_files <- if (dir.exists(search_root)) {
@@ -42,24 +71,29 @@ result_files <- if (dir.exists(search_root)) {
   character()
 }
 
+if (!is.null(requested_methods) && length(result_files) > 0L) {
+  m_dirs <- vapply(result_files, function(f) normalize_method_id(basename(dirname(f))), character(1))
+  result_files <- result_files[m_dirs %in% requested_methods]
+}
+
 if (length(result_files) == 0L && !allow_empty) {
   stop("No per-region method results were found.", call. = FALSE)
 }
 
-allowed_methods <- c("p_value", "p_ld", "susie_rss", "susie_rrss")
 allowed_region_types <- c(
   "cis_gene", "lead_locus", "mhc", "gene_region", "genome_wide_locus"
 )
 
 by_method <- list()
 if (allow_empty) {
-  for (m in allowed_methods) {
+  seed_methods <- if (!is.null(requested_methods)) requested_methods else default_active
+  for (m in seed_methods) {
     by_method[[m]] <- stats::setNames(list(), character())
   }
 }
 
 for (result_file in result_files) {
-  method_id <- basename(dirname(result_file))
+  method_id <- normalize_method_id(basename(dirname(result_file)))
   if (!method_id %in% allowed_methods) {
     stop("Unexpected method result path: ", result_file, call. = FALSE)
   }
@@ -106,11 +140,13 @@ if (!dir.create(output_dir, recursive = TRUE, showWarnings = FALSE) &&
   stop("Could not create aggregate methods directory.", call. = FALSE)
 }
 
-method_files <- c(
-  p_value = "p-value.rda",
-  p_ld = "p-ld.rda",
-  susie_rss = "susie-rss.rda",
-  susie_rrss = "susie-rrss.rda"
+method_stems <- c(
+  p_value = "p-value",
+  p_ld = "p-ld",
+  susie_rss = "susie-rss",
+  susie_rrss = "susie-rrss",
+  carma = "carma",
+  polyfun = "polyfun"
 )
 compression <- if (!is.null(options$compress) && nzchar(options$compress)) {
   options$compress
@@ -118,24 +154,50 @@ compression <- if (!is.null(options$compress) && nzchar(options$compress)) {
   "xz"
 }
 
-for (method_id in names(by_method)) {
+save_one_method <- function(method_id) {
   regions <- by_method[[method_id]]
   method_object <- list(
     schema_version = 1L,
     method_id = method_id,
     regions = regions
   )
-  environment <- new.env(parent = emptyenv())
-  assign(method_id, method_object, envir = environment)
-  save(
-    list = method_id,
-    envir = environment,
-    file = file.path(output_dir, method_files[[method_id]]),
-    compress = compression
-  )
+  stem <- method_stems[[method_id]]
+  if (out_format %in% c("rda", "both")) {
+    environment <- new.env(parent = emptyenv())
+    assign(method_id, method_object, envir = environment)
+    save(
+      list = method_id,
+      envir = environment,
+      file = file.path(output_dir, paste0(stem, ".rda")),
+      compress = compression
+    )
+  }
+  if (out_format %in% c("rds", "both")) {
+    saveRDS(
+      method_object,
+      file = file.path(output_dir, paste0(stem, ".rds")),
+      compress = compression
+    )
+  }
+  TRUE
 }
 
-if (length(result_files) > 0L) {
+m_names <- names(by_method)
+if (.Platform$OS.type == "unix" && length(m_names) > 1L) {
+  res_par <- parallel::mclapply(
+    m_names,
+    save_one_method,
+    mc.cores = min(length(m_names), 4L)
+  )
+  bad_par <- Filter(function(x) inherits(x, "try-error") || !isTRUE(x), res_par)
+  if (length(bad_par) > 0L) {
+    stop("Parallel method save failed: ", as.character(bad_par[[1L]]), call. = FALSE)
+  }
+} else {
+  lapply(m_names, save_one_method)
+}
+
+if (!keep_rds && length(result_files) > 0L) {
   unlink_failures <- unlink(result_files)
   if (unlink_failures > 0L || any(file.exists(result_files))) {
     stop("Could not remove temporary per-region RDS files.", call. = FALSE)

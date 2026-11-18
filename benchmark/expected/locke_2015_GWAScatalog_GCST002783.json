@@ -16,10 +16,14 @@
         "0.01": 97,
         "0.001": 39
       },
-      "cs_count_rss": 4,
-      "cs_count_rrss": 2,
+      "cs_count_rss": 3,
+      "cs_count_rrss": 1,
+      "cs_count_carma": 2,
+      "cs_count_polyfun": 3,
       "converged_rss": false,
       "converged_rrss": false,
+      "converged_carma": true,
+      "converged_polyfun": false,
       "top_variants": [
         {
           "gwas_variant_id": "16:53785257:T:C",
@@ -27,9 +31,13 @@
           "ez": 25.4333,
           "lp": 144.36,
           "pip_rss": 1,
-          "pip_rrss": 0.3878,
+          "pip_rrss": 0,
+          "pip_carma": 0,
+          "pip_polyfun": 1,
           "cs_rss": "L1",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": "L1"
         },
         {
           "gwas_variant_id": "16:53786615:T:A",
@@ -37,9 +45,13 @@
           "ez": 25.1333,
           "lp": 140.73,
           "pip_rss": 1,
-          "pip_rrss": 0.2993,
+          "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 1,
           "cs_rss": "L3",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": "L3"
         },
         {
           "gwas_variant_id": "16:53786591:G:A",
@@ -47,29 +59,13 @@
           "ez": 13.5,
           "lp": 40.8861,
           "pip_rss": 1,
-          "pip_rrss": 1,
+          "pip_rrss": 0,
+          "pip_carma": 0,
+          "pip_polyfun": 1,
           "cs_rss": "L2",
-          "cs_rrss": "L2"
-        },
-        {
-          "gwas_variant_id": "16:53785981:A:G",
-          "rsid": "rs11075990",
-          "ez": 24.8667,
-          "lp": 137.996,
-          "pip_rss": 0.9813,
-          "pip_rrss": 0.2123,
-          "cs_rss": "L5",
-          "cs_rrss": "L1"
-        },
-        {
-          "gwas_variant_id": "16:53785965:C:T",
-          "rsid": "rs11075989",
-          "ez": 24.8667,
-          "lp": 137.996,
-          "pip_rss": 0.0005,
-          "pip_rrss": 0.2122,
-          "cs_rss": "",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": "L2"
         },
         {
           "gwas_variant_id": "16:53767042:T:C",
@@ -77,9 +73,13 @@
           "ez": 26.7667,
           "lp": 157.664,
           "pip_rss": 0,
-          "pip_rrss": 0.1084,
+          "pip_rrss": 0,
+          "pip_carma": 1,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "L1",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53769662:T:A",
@@ -87,9 +87,13 @@
           "ez": 26.9667,
           "lp": 155.947,
           "pip_rss": 0,
-          "pip_rrss": 0.1524,
+          "pip_rrss": 0,
+          "pip_carma": 0,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53779455:T:G",
@@ -97,9 +101,13 @@
           "ez": 25.9655,
           "lp": 145.851,
           "pip_rss": 0,
-          "pip_rrss": 0.4305,
+          "pip_rrss": 0,
+          "pip_carma": 0,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53765595:G:A",
@@ -107,9 +115,13 @@
           "ez": 25.5,
           "lp": 145.012,
           "pip_rss": 0,
-          "pip_rrss": 0.0005,
+          "pip_rrss": 0,
+          "pip_carma": 0.0007,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53782363:C:A",
@@ -117,9 +129,13 @@
           "ez": 25.8621,
           "lp": 144.71,
           "pip_rss": 0,
-          "pip_rrss": 0.4391,
+          "pip_rrss": 0,
+          "pip_carma": 0,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53782926:G:A",
@@ -127,9 +143,13 @@
           "ez": 25.8621,
           "lp": 144.57,
           "pip_rss": 0,
-          "pip_rrss": 0.4862,
+          "pip_rrss": 0,
+          "pip_carma": 0.0013,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53794154:C:T",
@@ -137,9 +157,13 @@
           "ez": 25.6,
           "lp": 144.396,
           "pip_rss": 0,
-          "pip_rrss": 0.3819,
+          "pip_rrss": 0,
+          "pip_carma": 0.0003,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53765993:A:G",
@@ -147,9 +171,13 @@
           "ez": 25.3667,
           "lp": 143.604,
           "pip_rss": 0,
-          "pip_rrss": 0.0004,
+          "pip_rrss": 0,
+          "pip_carma": 0.0004,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53766656:G:A",
@@ -157,9 +185,13 @@
           "ez": 25.3667,
           "lp": 143.582,
           "pip_rss": 0,
-          "pip_rrss": 0.0005,
+          "pip_rrss": 0,
+          "pip_carma": 0,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53766842:G:A",
@@ -167,9 +199,13 @@
           "ez": 25.3333,
           "lp": 143.184,
           "pip_rss": 0,
-          "pip_rrss": 0.0005,
+          "pip_rrss": 0,
+          "pip_carma": 0.0003,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53767637:C:T",
@@ -177,9 +213,13 @@
           "ez": 25.2667,
           "lp": 142.484,
           "pip_rss": 0,
-          "pip_rrss": 0.0004,
+          "pip_rrss": 0,
+          "pip_carma": 0.0002,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53768073:C:T",
@@ -187,9 +227,13 @@
           "ez": 25.2333,
           "lp": 142.089,
           "pip_rss": 0,
-          "pip_rrss": 0.0004,
+          "pip_rrss": 0,
+          "pip_carma": 0.0002,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53771295:C:A",
@@ -197,9 +241,13 @@
           "ez": 25.2333,
           "lp": 142.066,
           "pip_rss": 0,
-          "pip_rrss": 0.0004,
+          "pip_rrss": 0,
+          "pip_carma": 0.0002,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53775335:G:A",
@@ -207,9 +255,13 @@
           "ez": 25.2,
           "lp": 141.827,
           "pip_rss": 0,
-          "pip_rrss": 0.0005,
+          "pip_rrss": 0,
+          "pip_carma": 0.0002,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53784548:G:T",
@@ -217,9 +269,13 @@
           "ez": 25.6667,
           "lp": 141.435,
           "pip_rss": 0,
-          "pip_rrss": 0.3878,
+          "pip_rrss": 0,
+          "pip_carma": 0.0004,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53776774:T:C",
@@ -227,9 +283,13 @@
           "ez": 25.1333,
           "lp": 141.209,
           "pip_rss": 0,
-          "pip_rrss": 0.1568,
+          "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53782840:A:G",
@@ -237,9 +297,13 @@
           "ez": 24.9667,
           "lp": 139.037,
           "pip_rss": 0,
-          "pip_rrss": 0.1563,
+          "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53788739:A:G",
@@ -247,9 +311,13 @@
           "ez": 24.9333,
           "lp": 138.971,
           "pip_rss": 0,
-          "pip_rrss": 0.2324,
+          "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53766065:T:G",
@@ -257,9 +325,41 @@
           "ez": 24.871,
           "lp": 138.613,
           "pip_rss": 0,
-          "pip_rrss": 0.0002,
+          "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
+        },
+        {
+          "gwas_variant_id": "16:53785965:C:T",
+          "rsid": "rs11075989",
+          "ez": 24.8667,
+          "lp": 137.996,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 0,
+          "cs_rss": "",
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
+        },
+        {
+          "gwas_variant_id": "16:53785981:A:G",
+          "rsid": "rs11075990",
+          "ez": 24.8667,
+          "lp": 137.996,
+          "pip_rss": 0,
+          "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 0,
+          "cs_rss": "",
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "16:53785286:G:C",
@@ -267,9 +367,13 @@
           "ez": 24.8333,
           "lp": 137.889,
           "pip_rss": 0,
-          "pip_rrss": 0.1906,
+          "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": "L1"
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         }
       ]
     },
@@ -283,19 +387,13 @@
       },
       "cs_count_rss": 6,
       "cs_count_rrss": 10,
+      "cs_count_carma": 6,
+      "cs_count_polyfun": 7,
       "converged_rss": false,
-      "converged_rrss": true,
+      "converged_rrss": false,
+      "converged_carma": false,
+      "converged_polyfun": false,
       "top_variants": [
-        {
-          "gwas_variant_id": "18:60208801:C:T",
-          "rsid": "rs11665563",
-          "ez": 15.4545,
-          "lp": 51.6066,
-          "pip_rss": 1,
-          "pip_rrss": 1,
-          "cs_rss": "L6",
-          "cs_rrss": "L4"
-        },
         {
           "gwas_variant_id": "18:60071370:T:G",
           "rsid": "rs7241535",
@@ -303,8 +401,12 @@
           "lp": 40.3519,
           "pip_rss": 1,
           "pip_rrss": 1,
+          "pip_carma": 0,
+          "pip_polyfun": 1,
           "cs_rss": "L1",
-          "cs_rrss": "L6"
+          "cs_rrss": "L6",
+          "cs_carma": "",
+          "cs_polyfun": "L1"
         },
         {
           "gwas_variant_id": "18:60210567:T:A",
@@ -313,18 +415,26 @@
           "lp": 37.2231,
           "pip_rss": 1,
           "pip_rrss": 1,
+          "pip_carma": 0,
+          "pip_polyfun": 0,
           "cs_rss": "L2",
-          "cs_rrss": "L8"
+          "cs_rrss": "L8",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
-          "gwas_variant_id": "18:60323237:G:T",
-          "rsid": "rs1598786",
-          "ez": 8.425,
-          "lp": 16.4427,
+          "gwas_variant_id": "18:60291011:C:T",
+          "rsid": "rs9944545",
+          "ez": 10.375,
+          "lp": 23.9646,
           "pip_rss": 1,
           "pip_rrss": 1,
+          "pip_carma": 0.0668,
+          "pip_polyfun": 1,
           "cs_rss": "L4",
-          "cs_rrss": "L9"
+          "cs_rrss": "L9",
+          "cs_carma": "L6",
+          "cs_polyfun": "L4"
         },
         {
           "gwas_variant_id": "18:60069038:G:A",
@@ -333,8 +443,12 @@
           "lp": 13.5622,
           "pip_rss": 1,
           "pip_rrss": 1,
+          "pip_carma": 0,
+          "pip_polyfun": 1,
           "cs_rss": "L3",
-          "cs_rrss": "L5"
+          "cs_rrss": "L5",
+          "cs_carma": "",
+          "cs_polyfun": "L3"
         },
         {
           "gwas_variant_id": "18:60319144:G:T",
@@ -343,8 +457,40 @@
           "lp": 5.1525,
           "pip_rss": 1,
           "pip_rrss": 1,
+          "pip_carma": 0,
+          "pip_polyfun": 1,
           "cs_rss": "L5",
-          "cs_rrss": "L10"
+          "cs_rrss": "L10",
+          "cs_carma": "",
+          "cs_polyfun": "L5"
+        },
+        {
+          "gwas_variant_id": "18:60208801:C:T",
+          "rsid": "rs11665563",
+          "ez": 15.4545,
+          "lp": 51.6066,
+          "pip_rss": 1,
+          "pip_rrss": 1,
+          "pip_carma": 0.0004,
+          "pip_polyfun": 0,
+          "cs_rss": "L6",
+          "cs_rrss": "L4",
+          "cs_carma": "",
+          "cs_polyfun": ""
+        },
+        {
+          "gwas_variant_id": "18:60208994:T:C",
+          "rsid": "rs11663816",
+          "ez": 15.3939,
+          "lp": 51.3426,
+          "pip_rss": 0,
+          "pip_rrss": 2e-06,
+          "pip_carma": 0.0004,
+          "pip_polyfun": 0,
+          "cs_rss": "",
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60161902:T:C",
@@ -353,8 +499,12 @@
           "lp": 58.175,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0578,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "L5",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60184530:A:G",
@@ -363,8 +513,12 @@
           "lp": 57.8604,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.282,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "L5",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60171168:G:A",
@@ -373,8 +527,12 @@
           "lp": 56.5186,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.6526,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "L5",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60185715:A:C",
@@ -383,8 +541,12 @@
           "lp": 56.0731,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0009,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60172536:C:A",
@@ -393,8 +555,12 @@
           "lp": 55.9606,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0078,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60185354:T:C",
@@ -403,8 +569,12 @@
           "lp": 54.5255,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60183864:T:C",
@@ -413,8 +583,12 @@
           "lp": 54.0896,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60181790:G:A",
@@ -423,8 +597,12 @@
           "lp": 53.7749,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60191596:T:C",
@@ -433,8 +611,12 @@
           "lp": 53.3407,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0013,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60192330:C:A",
@@ -443,8 +625,12 @@
           "lp": 53.2732,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0013,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60205756:A:G",
@@ -453,8 +639,12 @@
           "lp": 52.6442,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0002,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60181298:T:C",
@@ -463,8 +653,12 @@
           "lp": 52.5541,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0001,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60181136:A:T",
@@ -473,8 +667,12 @@
           "lp": 51.5339,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0004,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60244097:A:G",
@@ -482,9 +680,13 @@
           "ez": 15.4242,
           "lp": 51.4746,
           "pip_rss": 0,
-          "pip_rrss": 0,
+          "pip_rrss": 0.7343,
+          "pip_carma": 0.0006,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "L1",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60194728:G:A",
@@ -493,18 +695,12 @@
           "lp": 51.399,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0003,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
-        },
-        {
-          "gwas_variant_id": "18:60208994:T:C",
-          "rsid": "rs11663816",
-          "ez": 15.3939,
-          "lp": 51.3426,
-          "pip_rss": 0,
-          "pip_rrss": 0,
-          "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60144750:G:A",
@@ -513,8 +709,12 @@
           "lp": 51.0544,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60229509:C:T",
@@ -523,8 +723,12 @@
           "lp": 50.8821,
           "pip_rss": 0,
           "pip_rrss": 0,
+          "pip_carma": 0.0004,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "",
+          "cs_carma": "",
+          "cs_polyfun": ""
         },
         {
           "gwas_variant_id": "18:60236371:T:C",
@@ -532,9 +736,13 @@
           "ez": 15.3333,
           "lp": 50.8821,
           "pip_rss": 0,
-          "pip_rrss": 0,
+          "pip_rrss": 0.2657,
+          "pip_carma": 0.0004,
+          "pip_polyfun": 0,
           "cs_rss": "",
-          "cs_rrss": ""
+          "cs_rrss": "L1",
+          "cs_carma": "",
+          "cs_polyfun": ""
         }
       ]
     }

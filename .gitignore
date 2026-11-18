@@ -11,6 +11,9 @@ temp/
 *.pyc
 .Rcheck/
 ..Rcheck/
+src/*.o
+src/*.so
+src/*.dll
 *.sif
 *.parquet
 *.npz

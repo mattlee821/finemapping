@@ -15,6 +15,7 @@ cloud-synced folders).
 | `genome/GRCh37.fa`, `GRCh37.fa.fai` | GRCh37 primary assembly (about 3 GB), contigs `1`-`22`, `X`, `Y` | Ensembl release 113, indexed by the installer |
 | `annotation/gene_regions_GRCh38.tsv` | 1 gene region per UniProt accession (the layout of `config/gene_regions_test.tsv`, plus `source_rows`) | the dataset `mapping_GRCh38_p14_uniprot` of the public R package [usefuldata](https://github.com/mattlee821/usefuldata), pinned to a commit |
 | `annotation/gene_regions_GRCh38.ambiguous.tsv` | accessions whose rows name more than 1 gene, left out of the annotation (the runner needs exactly 1 gene per accession) | same |
+| `polyfun/by_chrom/chr1..22.parquet` and `polyfun_meta.json` | 19,476,620 autosomal GRCh37 per-SNP functional heritability priors (`baselineLF2.2.UKB` meta-analysis across 15 UK Biobank traits) with genome-wide $q = 100$ max/min truncation (`4.0733e-09` to `4.0733e-07`) | [omerwe/polyfun](https://github.com/omerwe/polyfun) (Weissbrod et al. 2020), pinned to commit `8b17b4ec` |
 | `panukb/UKBB.<POP>.variant_index.parquet` and `.json` | the whole-population variant index of the public Pan-UKB LD panel (GRCh37), for AFR, AMR, CSA, EAS, EUR and MID; `.json` records the row count, source table and software versions | `s3://pan-ukb-us-east-1/ld_release/UKBB.<POP>.ldadj.variant.ht`, read with Hail |
 | `reference_manifest.json` | source, size, SHA-256 and date of every installed file | written by the installer |
 

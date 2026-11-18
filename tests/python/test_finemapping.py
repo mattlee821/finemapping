@@ -320,7 +320,7 @@ class FineMappingTests(unittest.TestCase):
                     [
                         rscript, str(runner), "--variants", str(variants),
                         "--matrix", str(matrix_npy), "--outdir", str(out_m),
-                        "--methods", "p_value,p_ld,susie_rss,susie_rrss",
+                        "--methods", "p_ld,susie_rss,susie_rrss",
                         "--reference-sample-size", "500",
                         "--region-id", r_id,
                         "--region-type", r_type,
@@ -343,8 +343,9 @@ class FineMappingTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
 
-            for filename in ("p-value.rda", "p-ld.rda", "susie-rss.rda", "susie-rrss.rda"):
+            for filename in ("p-ld.rda", "susie-rss.rda", "susie-rrss.rda"):
                 self.assertTrue((output / "methods" / filename).is_file())
+            self.assertFalse((output / "methods" / "p-value.rda").exists())
             self.assertFalse((cis_methods / "susie_rss" / "variants.tsv").exists())
 
             check_r = (

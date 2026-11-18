@@ -78,6 +78,8 @@ gwasfm_activate_runtime() {
   export PYTHONNOUSERSITE=1
   export RENV_CONFIG_SYNCHRONIZED_CHECK=FALSE
   export R_MAX_VSIZE="${R_MAX_VSIZE:-64Gb}"
+  export OPENBLAS_NUM_THREADS="${GWASFM_BLAS_THREADS:-2}"
+  export OMP_NUM_THREADS="${GWASFM_BLAS_THREADS:-2}"
 
   if gwasfm_in_container; then
     export GWASFM_IN_CONTAINER=1
@@ -100,10 +102,17 @@ gwasfm_activate_runtime() {
   fi
 
   export RENV_PROJECT="${GWASFM_ROOT}"
-  if [[ -f "${GWASFM_ROOT}/.Rprofile" ]]; then
+  export RENV_PATHS_LIBRARY="${RENV_PATHS_LIBRARY:-${GWASFM_TOOLS_ROOT}/renv-library}"
+  local _direct_r_lib=""
+  if [[ -d "${RENV_PATHS_LIBRARY}" ]]; then
+    _direct_r_lib="$(find "${RENV_PATHS_LIBRARY}" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | head -n 1 || true)"
+  fi
+  if [[ -n "${_direct_r_lib}" && -d "${_direct_r_lib}/susieR" ]]; then
+    export R_LIBS_USER="${_direct_r_lib}"
+    export R_PROFILE_USER=""
+  elif [[ -f "${GWASFM_ROOT}/.Rprofile" ]]; then
     export R_PROFILE_USER="${GWASFM_ROOT}/.Rprofile"
   fi
-  export RENV_PATHS_LIBRARY="${RENV_PATHS_LIBRARY:-${GWASFM_TOOLS_ROOT}/renv-library}"
 
   if [[ -z "${GWASFM_CONTAINER_IMAGE:-}" && -f "${GWASFM_TOOLS_ROOT}/gwasfinemapping.sif" ]]; then
     export GWASFM_CONTAINER_IMAGE="${GWASFM_TOOLS_ROOT}/gwasfinemapping.sif"

@@ -93,7 +93,8 @@ name_susie_fit_variants <- function(fit, variant_ids) {
 
 compute_credible_sets_fast <- function(fit, R, coverage = 0.95,
                                        min_abs_corr = 0.5,
-                                       max_exact_purity = 500L) {
+                                       max_exact_purity = 500L,
+                                       ld_scale = 1) {
   raw_cs <- susieR::susie_get_cs(
     fit,
     Xcorr = NULL,
@@ -123,7 +124,7 @@ compute_credible_sets_fast <- function(fit, R, coverage = 0.95,
       } else {
         pos
       }
-      sub_r <- abs(R[pos_eval, pos_eval, drop = FALSE])
+      sub_r <- abs(R[pos_eval, pos_eval, drop = FALSE]) / ld_scale
       vals <- sub_r[upper.tri(sub_r, diag = FALSE)]
       purity_mat[i, ] <- c(
         min(vals),
@@ -167,14 +168,161 @@ compute_credible_sets_fast <- function(fit, R, coverage = 0.95,
   )
 }
 
+fit_susie_from_prescaled_xtx <- function(z, XtX, n, L, coverage, max_iter,
+                                         refine, prior_weights = NULL,
+                                         R_finite = NULL, R_mismatch = "none",
+                                         frob_sq = NULL, ld_scale = 1) {
+  ns <- asNamespace("susieR")
+  apply_pve <- get("apply_pve_adjustment", envir = ns)
+  working_fn <- get("summary_stats_working_quantities", envir = ns)
+  norm_pw <- get("normalize_prior_weights", envir = ns)
+  val_params <- get("validate_and_override_params", envir = ns)
+  workhorse <- get("susie_workhorse", envir = ns)
+  mix_p_to_z <- get("mixture_reference_p_to_z", envir = ns)
+
+  z_clean <- as.numeric(z)
+  z_clean[is.na(z_clean)] <- 0
+  p <- length(z_clean)
+  if (!is.null(colnames(XtX))) {
+    names(z_clean) <- colnames(XtX)
+  }
+  pve <- apply_pve(z_clean, n, "wald")
+  wk <- working_fn(
+    z = pve$z,
+    n = n,
+    pve_adjustment = pve$adjustment,
+    scaled_prior_variance = 0.2
+  )
+  if (!is.null(colnames(XtX))) {
+    names(wk$Xty) <- colnames(XtX)
+  }
+
+  if (is.null(attr(XtX, "d"))) {
+    d_vec <- diag(XtX)
+    attr(XtX, "d") <- d_vec
+    attr(XtX, "scaled:scale") <- rep(1, p)
+  }
+
+  pw <- norm_pw(prior_weights, p)
+  conv_method <- if (!is.null(R_finite) || R_mismatch != "none") "pip" else "elbo"
+
+  params_obj <- list(
+    L = min(as.integer(L), p),
+    scaled_prior_variance = wk$scaled_prior_variance,
+    residual_variance = NULL,
+    prior_weights = pw,
+    null_weight = 0,
+    estimate_residual_variance = FALSE,
+    estimate_residual_method = "MoM",
+    estimate_prior_variance = TRUE,
+    estimate_prior_method = "optim",
+    prior_variance_grid = NULL,
+    mixture_weights = NULL,
+    unmappable_effects = "none",
+    check_null_threshold = 0,
+    prior_tol = 1e-9,
+    residual_variance_upperbound = Inf,
+    model_init = NULL,
+    coverage = coverage,
+    min_abs_corr = NULL,
+    median_abs_corr = NULL,
+    compute_univariate_zscore = FALSE,
+    max_iter = as.integer(max_iter),
+    tol = NULL,
+    convergence_method = conv_method,
+    verbose = FALSE,
+    track_fit = FALSE,
+    residual_variance_lowerbound = 0,
+    refine = refine,
+    n_purity = "auto",
+    cs_extension_corr = NULL,
+    alpha0 = NULL,
+    beta0 = NULL,
+    n = wk$n,
+    use_NIG = FALSE,
+    intercept = FALSE,
+    standardize = FALSE,
+    check_prior = TRUE,
+    slot_prior = NULL,
+    L_greedy = NULL,
+    greedy_lbf_cutoff = 0.1
+  )
+  params_obj <- val_params(params_obj)
+  params_obj$coverage <- NULL
+  params_obj$min_abs_corr <- NULL
+
+  data_obj <- structure(
+    list(
+      XtX = XtX,
+      X = NULL,
+      Xty = wk$Xty,
+      yty = wk$yty,
+      n = wk$n,
+      p = p,
+      X_colmeans = rep(NA, p),
+      y_mean = NA
+    ),
+    class = "ss"
+  )
+  ss <- list(data = data_obj, params = params_obj)
+
+  if (!is.null(R_finite) || R_mismatch != "none") {
+    B <- if (is.null(R_finite)) Inf else R_finite
+    if (is.null(frob_sq) || !is.finite(frob_sq)) {
+      if (is.loaded("gwasfm_frob_and_scale_inplace", PACKAGE = "gwasfinemapping")) {
+        frob_sq <- .Call("gwasfm_frob_and_scale_inplace", XtX, 1.0,
+                         PACKAGE = "gwasfinemapping") / (ld_scale * ld_scale)
+      } else {
+        frob_sq <- sum((XtX / ld_scale)^2)
+      }
+    }
+    r_db <- if (is.infinite(B)) frob_sq else (B * frob_sq - p^2) / (B + 1)
+    eff_r <- p^2 / max(r_db, 1)
+    ss$data$R_finite_B <- B
+    ss$data$R_finite_diagnostics <- list(
+      B = B,
+      p = p,
+      R_frob_sq_debiased = r_db,
+      effective_rank = eff_r,
+      r_over_B = eff_r / B,
+      Rhat_diag_deviation = abs(diag(XtX) / ld_scale - 1)
+    )
+    ss$data$R_mismatch <- R_mismatch
+    if (R_mismatch != "none") {
+      eig <- eigen(XtX, symmetric = TRUE)
+      eig$values <- eig$values / ld_scale
+      ss$data$eigen_R <- eig
+    }
+    ss$params$R_mismatch <- R_mismatch
+    ss$params$R_mismatch_method <- "mle"
+    ss$params$eb_mix_ref <- 5e-8
+    ss$data$eb_mix_ref <- 5e-8
+    ss$params$eb_mix_z_ref <- mix_p_to_z(5e-8)
+    ss$data$eb_mix_z_ref <- ss$params$eb_mix_z_ref
+    ss$data$z_marginal <- pve$z
+    ss$params$eig_delta_rel <- 1e-3
+    ss$params$eig_delta_abs <- 0
+    ss$params$artifact_threshold <- 0.1
+    ss$params$R_sensitivity_threshold <- 30
+  }
+
+  model <- workhorse(ss$data, ss$params)
+  if (!is.null(model$R_finite_diagnostics)) {
+    model$R_finite_diagnostics$SER_fallback <-
+      isTRUE(model$R_finite_diagnostics$R_reliability_flag)
+  }
+  model
+}
+
 run_susie_model <- function(variants, R, method_id, effective_n = NULL,
                             reference_sample_size = NULL, L = 10L,
                             coverage = 0.95, min_abs_corr = 0.5,
-                            max_iter = 200L, refine = FALSE,
+                            max_iter = 50L, refine = FALSE,
                             R_mismatch = "eb_mix",
                             psd_max_variants = 5000L,
-                            eigen_max_variants = 5000L) {
-  if (!method_id %in% c("susie_rss", "susie_rrss")) {
+                            eigen_max_variants = 5000L,
+                            prior_weights = NULL) {
+  if (!method_id %in% c("susie_rss", "susie_rrss", "polyfun")) {
     stop("Unsupported SuSiE method identifier.", call. = FALSE)
   }
   if (length(eigen_max_variants) != 1L || !is.numeric(eigen_max_variants) ||
@@ -254,27 +402,55 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
     R_mismatch <- "none"
   }
 
+  ld_scale <- attr(R, "ld_scale")
+  if (is.null(ld_scale) || !is.finite(ld_scale) || ld_scale <= 0) {
+    ld_scale <- 1
+  }
+  frob_sq_attr <- attr(R, "frob_sq")
+
   # validate_ld_matrix already verified unit diagonal and symmetry:
   # standardize = FALSE avoids 4 redundant M x M copies, and min_abs_corr = NULL
   # avoids susieR 2.0.0's un-subsampled get_purity() O(M^2) allocation on diffuse slots.
-  fit <- susieR::susie_rss(
-    z = variants$EZ,
-    R = R,
-    n = n$value,
-    L = as.integer(L),
-    standardize = FALSE,
-    coverage = coverage,
-    min_abs_corr = NULL,
-    max_iter = as.integer(max_iter),
-    refine = refine,
-    R_finite = R_finite,
-    R_mismatch = R_mismatch
-  )
+  # When R was pre-scaled in-place to XtX = (n - 1) * R at load time, bypass
+  # susie_rss's second M x M allocation cleanly via sufficient_stats_constructor.
+  if (abs(ld_scale - (n$value - 1)) <= 1e-6 * max(1, n$value - 1)) {
+    fit <- fit_susie_from_prescaled_xtx(
+      z = variants$EZ,
+      XtX = R,
+      n = n$value,
+      L = as.integer(L),
+      coverage = coverage,
+      max_iter = as.integer(max_iter),
+      refine = refine,
+      prior_weights = prior_weights,
+      R_finite = R_finite,
+      R_mismatch = R_mismatch,
+      frob_sq = frob_sq_attr,
+      ld_scale = ld_scale
+    )
+  } else {
+    R_unscaled <- if (ld_scale == 1) R else R / ld_scale
+    fit <- susieR::susie_rss(
+      z = variants$EZ,
+      R = R_unscaled,
+      n = n$value,
+      L = as.integer(L),
+      prior_weights = prior_weights,
+      standardize = FALSE,
+      coverage = coverage,
+      min_abs_corr = NULL,
+      max_iter = as.integer(max_iter),
+      refine = refine,
+      R_finite = R_finite,
+      R_mismatch = R_mismatch
+    )
+  }
   cs <- compute_credible_sets_fast(
     fit,
     R = R,
     coverage = coverage,
-    min_abs_corr = min_abs_corr
+    min_abs_corr = min_abs_corr,
+    ld_scale = ld_scale
   )
   fit$sets <- cs
   fit <- name_susie_fit_variants(fit, gwas_ids)
@@ -350,8 +526,11 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
   lead_idx <- which.max(
     ifelse(is.na(variants$LP), -Inf, as.numeric(variants$LP))
   )
-  ld_r2_to_lead <- if (length(lead_idx) == 1L && nrow(R) == nrow(variants)) {
-    as.numeric(R[, lead_idx]^2)
+  ld_r2_to_lead <- if ("LD_R2_TO_LEAD" %in% names(variants) &&
+                       !anyNA(variants$LD_R2_TO_LEAD)) {
+    as.numeric(variants$LD_R2_TO_LEAD)
+  } else if (length(lead_idx) == 1L && nrow(R) == nrow(variants)) {
+    (as.numeric(R[, lead_idx]) / ld_scale)^2
   } else {
     rep(NA_real_, nrow(variants))
   }
@@ -408,7 +587,7 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
 
 run_susie_rss <- function(variants, R, effective_n = NULL, L = 10L,
                           coverage = 0.95, min_abs_corr = 0.5,
-                          max_iter = 200L, refine = FALSE,
+                          max_iter = 50L, refine = FALSE,
                           psd_max_variants = 5000L) {
   run_susie_model(
     variants = variants,
@@ -426,7 +605,7 @@ run_susie_rss <- function(variants, R, effective_n = NULL, L = 10L,
 
 run_susie_rrss <- function(variants, R, reference_sample_size,
                            effective_n = NULL, L = 10L, coverage = 0.95,
-                           min_abs_corr = 0.5, max_iter = 200L,
+                           min_abs_corr = 0.5, max_iter = 50L,
                            refine = FALSE, R_mismatch = "eb_mix",
                            psd_max_variants = 5000L,
                            eigen_max_variants = 5000L) {

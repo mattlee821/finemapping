@@ -25,7 +25,7 @@ BASE_QUERY_FORMAT = (
     "%CHROM\\t%POS\\t%ID\\t%REF\\t%ALT\\t"
     "[%LP{0}]\\t[%ES{0}]\\t[%SE{0}]\\t[%SS{0}]"
 )
-METHODS = "p_value,p_ld,susie_rss,susie_rrss"
+METHODS = "p_ld,susie_rss,susie_rrss"
 
 # Exact sample sizes verified from s3://pan-ukb-us-east-1/ld_release/UKBB.<POP>.ldadj.variant.ht/globals
 REFERENCE_SAMPLES: dict[str, int] = {
@@ -853,11 +853,20 @@ def r_runtime_environment(project_root: Path) -> dict[str, str]:
     if not tools_root.is_absolute():
         tools_root = project_root / tools_root
     environment.setdefault("RENV_PROJECT", str(project_root))
-    rprofile = project_root / ".Rprofile"
-    if rprofile.is_file():
-        environment.setdefault("R_PROFILE_USER", str(rprofile))
     if "RENV_PATHS_LIBRARY" not in environment:
         environment["RENV_PATHS_LIBRARY"] = str(tools_root / "renv-library")
+    renv_lib_root = Path(environment["RENV_PATHS_LIBRARY"])
+    direct_libs = [
+        p for p in renv_lib_root.glob("*/*/*")
+        if p.is_dir() and (p / "susieR").is_dir()
+    ] if renv_lib_root.is_dir() else []
+    if direct_libs:
+        environment["R_LIBS_USER"] = str(sorted(direct_libs)[0])
+        environment["R_PROFILE_USER"] = ""
+    else:
+        rprofile = project_root / ".Rprofile"
+        if rprofile.is_file():
+            environment.setdefault("R_PROFILE_USER", str(rprofile))
     env_bin = tools_root / "env" / "bin"
     if env_bin.is_dir():
         environment["PATH"] = f"{env_bin}:{environment.get('PATH', '')}"

@@ -22,6 +22,7 @@ ENV RENV_PATHS_LIBRARY=/opt/gwasfinemapping-r-lib \
 RUN mkdir -p /opt/gwasfinemapping-r-lib \
     && Rscript -e 'renv::restore(prompt = FALSE)' \
     && R_LIB="$(Rscript -e 'cat(.libPaths()[1])')" \
+    && R_PROFILE_USER="" Rscript scripts/install_carma.R "$R_LIB" \
     && R_PROFILE_USER="" R CMD INSTALL --no-multiarch --library="$R_LIB" .
 
 USER $MAMBA_USER

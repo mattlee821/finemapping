@@ -2,7 +2,7 @@
 """Install and check the reference data that GWASfinemapping needs at run time.
 
 Usage:
-    python3 scripts/reference_data.py install [--root DIR] [--only genome,panukb,annotation]
+    python3 scripts/reference_data.py install [--root DIR] [--only genome,panukb,annotation,polyfun]
                                               [--populations EUR,AFR,AMR,CSA,EAS,MID] [--force] [--dry-run]
     python3 scripts/reference_data.py check   [--root DIR] [--only ...] [--populations ...]
     python3 scripts/reference_data.py paths   [--root DIR] [--nextflow]
@@ -18,11 +18,13 @@ cloud-synced folders) holds:
     annotation/gene_regions_GRCh38.tsv   1 gene region per UniProt accession from usefuldata (GRCh38), in the layout of
                                          config/gene_regions_test.tsv; accessions that map to more than 1 gene are written
                                          to gene_regions_GRCh38.ambiguous.tsv and left out
+    polyfun/by_chrom/chr1..22.parquet    precomputed UK Biobank baseline-LF v2.2.UKB per-SNP heritability priors from
+                                         PolyFun (Weissbrod et al. 2020) with genome-wide q=100 truncation
     reference_manifest.json              where each file came from, its size and SHA-256, and when
 
 Every step skips what is already installed and valid; --force reinstalls. `check` re-reads the files and reports what is
-missing or does not match its record. Override the sources with GWASFM_CHAIN_URL, GWASFM_FASTA_GRCH37_URL and
-GWASFM_USEFULDATA_COMMIT.
+missing or does not match its record. Override the sources with GWASFM_CHAIN_URL, GWASFM_FASTA_GRCH37_URL,
+GWASFM_USEFULDATA_COMMIT and GWASFM_POLYFUN_COMMIT.
 """
 
 from __future__ import annotations
@@ -45,13 +47,16 @@ from pathlib import Path
 from typing import Any
 
 POPULATIONS = ("AFR", "AMR", "CSA", "EAS", "EUR", "MID")
-STEPS = ("genome", "panukb", "annotation")
+STEPS = ("genome", "panukb", "annotation", "polyfun")
 CHAIN_URL = "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/liftOver/hg38ToHg19.over.chain.gz"
 FASTA_GRCH37_URL = ("https://ftp.ensembl.org/pub/grch37/release-113/fasta/homo_sapiens/dna/"
                     "Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz")
 USEFULDATA_COMMIT = "30f2e833b91c01cb0c2e22149afa89c6ba0a4ad1"  # mattlee821/usefuldata, includes the UniProt mapping
 USEFULDATA_URL = "https://raw.githubusercontent.com/mattlee821/usefuldata/{commit}/data/mapping_GRCh38_p14_uniprot.rda"
 USEFULDATA_DATASET = "mapping_GRCh38_p14_uniprot"
+POLYFUN_COMMIT = "8b17b4ec87fde11f8d216c049c08d1420cd25de6"  # omerwe/polyfun, UKB 19M-SNP meta-analyzed snpvar_meta
+POLYFUN_URL = "https://raw.githubusercontent.com/omerwe/polyfun/{commit}/{filename}"
+POLYFUN_TRUNCATION_Q = 100.0
 GRCH37_CHR1_LENGTH = 249_250_621
 GRCH38_CHR1_LENGTH = 248_956_422
 STANDARD_CONTIGS = {str(c) for c in range(1, 23)} | {"X", "Y"}
@@ -381,6 +386,107 @@ def check_annotation(root: Path) -> int:
     return len(rows)
 
 
+# PolyFun functional heritability priors ====
+def check_polyfun(root: Path) -> int:
+    pdir = root / "polyfun"
+    meta_path = pdir / "polyfun_meta.json"
+    by_chrom = pdir / "by_chrom"
+    if not meta_path.is_file() or not by_chrom.is_dir():
+        raise ReferenceError(f"{meta_path} or {by_chrom} is missing")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    if meta.get("genome_build") != "GRCh37":
+        raise ReferenceError(f"{meta_path}: expected GRCh37 genome_build")
+    import pyarrow.parquet as pq
+
+    total_rows = 0
+    for chrom in range(1, 23):
+        cpath = by_chrom / f"chr{chrom}.parquet"
+        if not cpath.is_file():
+            raise ReferenceError(f"missing {cpath}")
+        pf = pq.ParquetFile(cpath)
+        missing_cols = {"BP", "A1", "A2", "SNPVAR"} - set(pf.schema_arrow.names)
+        if missing_cols or pf.metadata.num_rows == 0:
+            raise ReferenceError(f"{cpath}: invalid columns or empty ({sorted(missing_cols)})")
+        total_rows += pf.metadata.num_rows
+    if total_rows < 18_000_000 or total_rows != int(meta.get("total_variants", -1)):
+        raise ReferenceError(f"{by_chrom}: {total_rows} rows (recorded {meta.get('total_variants')})")
+    return total_rows
+
+
+def install_polyfun(root: Path, force: bool) -> None:
+    pdir = root / "polyfun"
+    by_chrom = pdir / "by_chrom"
+    if not force:
+        try:
+            rows = check_polyfun(root)
+            print(f"polyfun: installed ({rows:,} autosomal GRCh37 variants)")
+            for fname in ("snpvar_meta.chr1_7.parquet", "snpvar_meta.chr8_22.parquet"):
+                fpath = pdir / fname
+                if fpath.is_file():
+                    commit_rec = os.environ.get("GWASFM_POLYFUN_COMMIT", POLYFUN_COMMIT)
+                    record(root, f"polyfun/{fname}", source=POLYFUN_URL.format(commit=commit_rec, filename=fname))
+            record(root, "polyfun/polyfun_meta.json", source=f"omerwe/polyfun {os.environ.get('GWASFM_POLYFUN_COMMIT', POLYFUN_COMMIT)}")
+            return
+        except ReferenceError:
+            pass
+
+    import numpy as np
+    import pandas as pd
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    commit = os.environ.get("GWASFM_POLYFUN_COMMIT", POLYFUN_COMMIT)
+    pdir.mkdir(parents=True, exist_ok=True)
+    by_chrom.mkdir(parents=True, exist_ok=True)
+    for fname in ("snpvar_meta.chr1_7.parquet", "snpvar_meta.chr8_22.parquet"):
+        dest = pdir / fname
+        url = POLYFUN_URL.format(commit=commit, filename=fname)
+        if force or not dest.is_file():
+            print(f"polyfun: downloading {fname} from omerwe/polyfun {commit[:8]}")
+            fetch(url, dest, timeout=240)
+        record(root, f"polyfun/{fname}", source=url)
+
+    df1 = pd.read_parquet(pdir / "snpvar_meta.chr1_7.parquet")
+    df2 = pd.read_parquet(pdir / "snpvar_meta.chr8_22.parquet")
+    df = pd.concat([df1, df2], ignore_index=True)
+    del df1, df2
+
+    max_raw = float(df["snpvar_bin"].max())
+    min_raw = max_raw / POLYFUN_TRUNCATION_Q
+    sum_raw = float(df["snpvar_bin"].sum())
+    trunc = np.maximum(df["snpvar_bin"].to_numpy(dtype=np.float64), min_raw)
+    scale = sum_raw / float(trunc.sum())
+    df["SNPVAR"] = trunc * scale
+    min_scaled = float(min_raw * scale)
+    max_scaled = float(max_raw * scale)
+
+    chrom_counts: dict[str, int] = {}
+    for chrom in range(1, 23):
+        sub = df.loc[df["CHR"] == chrom, ["BP", "A1", "A2", "SNPVAR"]].sort_values("BP").reset_index(drop=True)
+        out_p = by_chrom / f"chr{chrom}.parquet"
+        tmp_p = by_chrom / f"chr{chrom}.parquet.part"
+        pq.write_table(pa.Table.from_pandas(sub, preserve_index=False), tmp_p, compression="zstd")
+        os.replace(tmp_p, out_p)
+        chrom_counts[str(chrom)] = int(len(sub))
+
+    meta = {
+        "source": "https://github.com/omerwe/polyfun",
+        "commit": commit,
+        "genome_build": "GRCh37",
+        "total_variants": int(len(df)),
+        "truncation_q": POLYFUN_TRUNCATION_Q,
+        "min_snpvar_scaled": min_scaled,
+        "max_snpvar_scaled": max_scaled,
+        "scale_factor": scale,
+        "chrom_counts": chrom_counts,
+    }
+    meta_p = pdir / "polyfun_meta.json"
+    meta_p.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    rows = check_polyfun(root)
+    record(root, "polyfun/polyfun_meta.json", source=f"omerwe/polyfun {commit}", variants=rows)
+    print(f"polyfun: {rows:,} autosomal GRCh37 functional priors indexed across chr1-chr22")
+
+
 # commands ====
 def parse_list(value: str | None, allowed: tuple[str, ...], name: str) -> tuple[str, ...]:
     if not value:
@@ -404,6 +510,8 @@ def command_install(args: argparse.Namespace) -> int:
         install_genome(root, args.force)
     if "annotation" in steps:
         install_annotation(root, args.force, Path(args.usefuldata_rda) if args.usefuldata_rda else None, args.rscript)
+    if "polyfun" in steps:
+        install_polyfun(root, args.force)
     if "panukb" in steps:
         install_panukb(root, populations, args.force)
     return command_check(args)
@@ -430,6 +538,8 @@ def command_check(args: argparse.Namespace) -> int:
         report("genome/GRCh37.fa(.fai)", lambda: check_fasta(root / "genome" / "GRCh37.fa"))
     if "annotation" in steps:
         report("annotation/gene_regions_GRCh38.tsv", lambda: f"{check_annotation(root):,} gene regions")
+    if "polyfun" in steps:
+        report("polyfun/by_chrom/chr1..22.parquet", lambda: f"{check_polyfun(root):,} variants")
     if "panukb" in steps:
         for population in populations:
             report(f"panukb/UKBB.{population}.variant_index.parquet", lambda p=population: f"{check_panukb(root, p):,} variants")
@@ -447,7 +557,7 @@ def command_paths(args: argparse.Namespace) -> int:
     root = reference_root(args.root)
     paths = {"chain": root / "genome" / "hg38ToHg19.over.chain.gz", "grch37_fasta": root / "genome" / "GRCh37.fa",
              "grch37_fai": root / "genome" / "GRCh37.fa.fai", "gene_annotation": root / "annotation" / "gene_regions_GRCh38.tsv",
-             "panukb_dir": root / "panukb"}
+             "panukb_dir": root / "panukb", "polyfun_dir": root / "polyfun"}
     if args.nextflow:
         print(" ".join(f"--{key} {value}" for key, value in paths.items()))
     else:

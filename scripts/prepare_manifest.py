@@ -18,7 +18,32 @@ from pathlib import Path
 from typing import Any
 
 REFERENCE_POPULATIONS = {"AFR", "AMR", "CSA", "EAS", "EUR", "MID"}
-REQUIRED_RDAS = ("p-value.rda", "p-ld.rda", "susie-rss.rda", "susie-rrss.rda")
+METHOD_STEMS = {
+    "p_ld": "p-ld",
+    "susie_rss": "susie-rss",
+    "susie_rrss": "susie-rrss",
+    "carma": "carma",
+    "polyfun": "polyfun",
+}
+
+
+def normalize_methods_spec(spec: str) -> list[str]:
+    tokens = [
+        t.strip().lower().replace("-", "_")
+        for t in re.split(r"[,\s]+", (spec or "").strip())
+        if t.strip()
+    ]
+    out: list[str] = []
+    for t in tokens:
+        if t == "polyfun_susie":
+            t = "polyfun"
+        if t not in METHOD_STEMS:
+            raise ValueError(f"Unsupported fine-mapping method '{t}' (allowed: {sorted(METHOD_STEMS)})")
+        if t not in out:
+            out.append(t)
+    if not out:
+        raise ValueError("At least one fine-mapping method must be specified.")
+    return out
 STATE_COLUMNS = [
     "row_key",
     "study_id",
@@ -334,11 +359,13 @@ def preflight_row(
 def compute_settings_hash(row: dict[str, Any], params: dict[str, Any]) -> str:
     vcf_stat = Path(row["vcf"]).stat()
     payload = {
-        "schema": 2,
+        "schema": 3,
         "vcf": row["vcf"],
         "vcf_size": vcf_stat.st_size,
         "ld_population": row["ld_population"],
         "gene_id": row["gene_id"],
+        "methods": params["methods"],
+        "output_format": params["output_format"],
         "significance_lp": round(float(params["significance_lp"]), 8),
         "cis_significance_lp": (
             round(float(params["cis_significance_lp"]), 8)
@@ -368,12 +395,17 @@ def load_state(state_file: Path) -> dict[str, dict[str, str]]:
 
 def outputs_are_complete(outdir: Path, study_id: str, gwas_id: str,
                          settings_hash: str, state: dict[str, dict[str, str]],
-                         require_report: bool) -> bool:
+                         require_report: bool, methods: list[str],
+                         output_format: str) -> bool:
     gdir = outdir / study_id / gwas_id
     if not (gdir / "qc.json").is_file() or not (gdir / "provenance.json").is_file():
         return False
-    if any(not (gdir / "methods" / rda).is_file() for rda in REQUIRED_RDAS):
-        return False
+    exts = ["rda", "rds"] if output_format == "both" else [output_format]
+    for m in methods:
+        stem = METHOD_STEMS[m]
+        for ext in exts:
+            if not (gdir / "methods" / f"{stem}.{ext}").is_file():
+                return False
     if require_report and not (gdir / "report.html").is_file():
         return False
     rec = state.get(f"{study_id}/{gwas_id}")
@@ -444,7 +476,14 @@ def cmd_prepare(args: argparse.Namespace) -> int:
             filtered.append(r)
         raw_rows = filtered
 
+    methods_list = normalize_methods_spec(args.methods)
+    out_fmt = args.output_format.strip().lower()
+    if out_fmt not in ("rda", "rds", "both"):
+        raise ValueError(f"Unsupported --output-format '{out_fmt}'")
+
     params = {
+        "methods": methods_list,
+        "output_format": out_fmt,
         "significance_lp": args.significance_lp,
         "cis_significance_lp": args.cis_significance_lp,
         "region_flank_bp": args.region_flank_bp,
@@ -495,7 +534,8 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         shash = compute_settings_hash(checked, params)
         checked["settings_hash"] = shash
         if not args.force and outputs_are_complete(
-            outdir, checked["study_id"], checked["gwas_id"], shash, state, args.report
+            outdir, checked["study_id"], checked["gwas_id"], shash, state,
+            args.report, methods_list, out_fmt
         ):
             skipped_complete += 1
             continue
@@ -534,9 +574,19 @@ def cmd_prepare(args: argparse.Namespace) -> int:
                         if args.panukb_dir
                         else ""
                     ),
+                    "polyfun_dir": (
+                        str(Path(args.polyfun_dir).expanduser().resolve())
+                        if args.polyfun_dir
+                        else ""
+                    ),
                     "local_ld_panel": (
                         str(Path(args.local_ld_panel).expanduser().resolve())
                         if args.local_ld_panel
+                        else ""
+                    ),
+                    "bm_path": (
+                        str(Path(args.bm_path).expanduser().resolve())
+                        if args.bm_path
                         else ""
                     ),
                     "cache_dir": str(Path(args.cache_dir).expanduser().resolve()),
@@ -690,9 +740,13 @@ def main() -> int:
     p_prep.add_argument("--grch37-fasta", required=True)
     p_prep.add_argument("--gene-annotation")
     p_prep.add_argument("--panukb-dir")
+    p_prep.add_argument("--polyfun-dir")
     p_prep.add_argument("--local-ld-panel")
+    p_prep.add_argument("--bm-path")
     p_prep.add_argument("--cache-dir", required=True)
     p_prep.add_argument("--population", default="EUR")
+    p_prep.add_argument("--methods", default="p_ld,susie_rss,susie_rrss,carma,polyfun")
+    p_prep.add_argument("--output-format", default="rda")
     p_prep.add_argument("--reference-sample-size", type=int)
     p_prep.add_argument("--effective-n", type=float)
     p_prep.add_argument("--significance-lp", type=float, default=7.301029995664)
@@ -703,7 +757,7 @@ def main() -> int:
     p_prep.add_argument("--exclude-mhc", type=str2bool, default=False)
     p_prep.add_argument("--max-loci", type=int, default=0)
     p_prep.add_argument("--max-causal", type=int, default=10)
-    p_prep.add_argument("--max-iter", type=int, default=200)
+    p_prep.add_argument("--max-iter", type=int, default=50)
     p_prep.add_argument("--row-limit", type=int, default=0)
     p_prep.add_argument("--force", type=str2bool, default=False)
     p_prep.add_argument("--dry-run", type=str2bool, default=False)

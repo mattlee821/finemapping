@@ -29,9 +29,11 @@ else
   python3 -m unittest discover -s tests/python -v
 fi
 
-echo "=== [2/4] R package testthat suite ==="
+echo "=== [2/4] R package build/install & testthat suite ==="
+find src \( -name '*.o' -o -name '*.so' \) -delete 2>/dev/null || true
+R_PROFILE_USER="" R CMD INSTALL --no-multiarch . >/dev/null
 Rscript -e '
-  for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
+  library(gwasfinemapping)
   testthat::test_dir("tests/testthat", reporter = "summary", stop_on_failure = TRUE)
 '
 
@@ -111,13 +113,30 @@ test ! -f "${TMP_TEST}/out_nomhc/sun_synthetic/P00002_subthresh_nomhc/report.htm
 Rscript scripts/render_report.R --gwas-dir "${TMP_TEST}/out_nomhc/sun_synthetic/P00002_subthresh_nomhc"
 test -f "${TMP_TEST}/out_nomhc/sun_synthetic/P00002_subthresh_nomhc/report.html"
 
+# 4e. User-selected method subset ("p-ld susie-rrss polyfun") + --output-format rds
+GWASFM_NXF_WORK="${TMP_TEST}/nxf-work" \
+GWASFM_CACHE_DIR="${TMP_TEST}/cache" \
+bash scripts/finemap.sh \
+  --vcf "${TMP_TEST}/fixture/gwas/cancer_synthetic/colon_rectal_sim/colon_rectal_sim.vcf.gz" \
+  --study-id cancer_synthetic \
+  --gwas-id colon_rectal_subset_rds \
+  --ancestry EUR \
+  --methods "p-ld susie-rrss polyfun" \
+  --output-format rds \
+  --compress gzip \
+  --reference-root "${TMP_TEST}/fixture/reference" \
+  --local-ld-panel "${TMP_TEST}/fixture/reference/local_eur_panel.npz" \
+  --ld-pop EUR \
+  --outdir "${TMP_TEST}/out_subset"
+
 # Verify contracts in Python + R
-python3 - "${TMP_TEST}/out_batch" "${TMP_TEST}/out_nomhc" <<'PY'
+python3 - "${TMP_TEST}/out_batch" "${TMP_TEST}/out_nomhc" "${TMP_TEST}/out_subset" <<'PY'
 import json, sys
 from pathlib import Path
 
 out_batch = Path(sys.argv[1])
 out_nomhc = Path(sys.argv[2])
+out_subset = Path(sys.argv[3])
 
 assert (out_batch / "manifest.html").is_file(), "Missing batch manifest.html"
 assert (out_batch / ".finemap_state.tsv").is_file(), "Missing .finemap_state.tsv"
@@ -126,17 +145,22 @@ assert (out_batch / "sun_synthetic" / "logs").is_dir(), "Missing per-study logs/
 g1 = out_batch / "sun_synthetic" / "P00001_olink"
 g2 = out_batch / "cancer_synthetic" / "colon_rectal_sim"
 g3 = out_nomhc / "sun_synthetic" / "P00002_subthresh_nomhc"
+g4 = out_subset / "cancer_synthetic" / "colon_rectal_subset_rds"
 
 expected_top = {"metadata.json", "provenance.json", "qc.json", "report.html", "methods"}
-expected_rdas = {"p-value.rda", "p-ld.rda", "susie-rss.rda", "susie-rrss.rda"}
+expected_rdas = {"p-ld.rda", "susie-rss.rda", "susie-rrss.rda", "carma.rda", "polyfun.rda"}
 
 for gdir in (g1, g2, g3):
     present_top = {p.name for p in gdir.iterdir()}
     assert present_top == expected_top, f"Unexpected top-level files in {gdir}: {present_top}"
     present_rdas = {p.name for p in (gdir / "methods").iterdir()}
     assert present_rdas == expected_rdas, f"Unexpected .rda files in {gdir}/methods: {present_rdas}"
+    assert "p-value.rda" not in present_rdas
     html_text = (gdir / "report.html").read_text(encoding="utf-8")
     assert "data:image/png;base64," in html_text, f"Embedded base64 plot missing in {gdir}/report.html"
+
+present_subset = {p.name for p in (g4 / "methods").iterdir()}
+assert present_subset == {"p-ld.rds", "susie-rrss.rds", "polyfun.rds"}, f"Unexpected subset files: {present_subset}"
 
 qc3 = json.loads((g3 / "qc.json").read_text(encoding="utf-8"))
 assert qc3["ancestry_ld_status"] == "multi_ancestry_gwas_single_panel_ld"
@@ -144,6 +168,8 @@ assert "ALL→EUR LD" in (g3 / "report.html").read_text(encoding="utf-8")
 assert qc3["mhc"]["status"] == "excluded_by_option"
 assert qc3["cis_gene"]["status"] == "skipped_below_significance_threshold"
 assert qc3["analyzed_regions_count"] == 2
+assert qc3["total_credible_sets_carma"] >= 1
+assert qc3["total_credible_sets_polyfun"] >= 1
 print("Python contract & state-tracking assertions passed.")
 PY
 
