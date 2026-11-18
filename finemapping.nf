@@ -140,162 +140,154 @@ PY
     """
 }
 
-process PREP_LOCUS {
+process FINEMAP_LOCUS {
     tag "${row_id}:${region_id}"
-    label 'stage_prep'
+    label 'method_heavy'
     cache false
-    afterScript { "python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' --step-name '02_prep_${region_id}' || true" }
+    afterScript { "if [ -s .command.err ]; then python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' --step-name '02_locus_worker_${region_id}' || true; fi" }
 
     input:
     tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(locus_index), val(region_id), val(region_type)
 
     output:
-    tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(region_id), val(region_type), env('SCRATCH_LOCI_ROOT')
+    tuple val(row_id), path(row_json), path(screen_json), val(n_loci), env('SCRATCH_LOCI_ROOT')
 
     script:
-    def scratch_base = "${params.cache_dir}/scratch/${workflow.sessionId}/${row_id}/loci"
+    def run_scratch_id = params.log_root ? new File(params.log_root as String).name : workflow.sessionId.toString()
+    def scratch_base = "${params.cache_dir}/scratch/${run_scratch_id}/${row_id}/loci"
     """
-    python3 - '${projectDir}/scripts/prep_locus.py' '${row_json}' '${screen_json}' '${locus_index}' '${region_id}' '${scratch_base}' <<'PY'
-import json, subprocess, sys
-from pathlib import Path
-
-prep_script, row_p, screen_p, loc_idx, reg_id, scratch_base = sys.argv[1:7]
-row = json.loads(Path(row_p).read_text(encoding="utf-8"))
-if row.get("keep_intermediates"):
-    loci_root = Path(row["outdir"]) / row["study_id"] / row["gwas_id"] / "loci"
-else:
-    loci_root = Path(scratch_base)
-
-outdir = loci_root / reg_id
-cmd = [
-    sys.executable, prep_script,
-    "--screen-json", screen_p,
-    "--locus-index", str(loc_idx),
-    "--outdir", str(outdir),
-    "--chain", row["chain"],
-    "--grch37-fasta", row["grch37_fasta"],
-    "--cache-dir", row["cache_dir"],
-]
-if row.get("panukb_dir"):
-    cmd.extend(["--panukb-dir", row["panukb_dir"]])
-if row.get("local_ld_panel"):
-    cmd.extend(["--local-ld-panel", row["local_ld_panel"]])
-if row.get("bm_path"):
-    cmd.extend(["--bm-path", row["bm_path"]])
-if row.get("keep_intermediates"):
-    cmd.append("--keep-intermediates")
-
-subprocess.run(cmd, check=True)
-Path(".scratch_loci_root").write_text(str(loci_root), encoding="utf-8")
-PY
-    SCRATCH_LOCI_ROOT="\$(cat .scratch_loci_root)"
-    """
-}
-
-process RUN_P_LD {
-    tag "${row_id}:${region_id}:p_ld"
-    label 'method_light'
-    cache false
-    afterScript { "python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' --step-name '03_method_${region_id}_p_ld' || true" }
-
-    input:
-    tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(region_id), val(region_type), val(scratch_loci_root)
-
-    output:
-    tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(region_id), val(scratch_loci_root)
-
-    script:
-    def loc_dir = "${scratch_loci_root}/${region_id}"
-    """
-    Rscript '${projectDir}/scripts/methods/run_p_ld.R' \\
-      --variants '${loc_dir}/matched_variants.tsv' \\
-      --matrix '${loc_dir}/matrix.npy' \\
-      --region-id '${region_id}' \\
-      --region-type '${region_type}' \\
-      --out-rds '${loc_dir}/methods/p_ld/region_result.rds' \\
-      --qc-json '${loc_dir}/methods/p_ld/method_qc.json' \\
-      --allow-skipped-locus true
-    """
-}
-
-process RUN_BAYESIAN_METHOD {
-    tag "${row_id}:${region_id}:${method_id}"
-    label 'method_heavy'
-    cache false
-    afterScript { "python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' --step-name '03_method_${region_id}_${method_id}' || true" }
-
-    input:
-    tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(region_id), val(region_type), val(scratch_loci_root), val(method_id)
-
-    output:
-    tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(region_id), val(scratch_loci_root)
-
-    script:
-    def loc_dir = "${scratch_loci_root}/${region_id}"
-    """
-    python3 - '${projectDir}' '${row_json}' '${screen_json}' '${loc_dir}' '${region_id}' '${region_type}' '${method_id}' <<'PY'
-import json, subprocess, sys
+    python3 - '${projectDir}' '${row_json}' '${screen_json}' '${locus_index}' '${region_id}' '${region_type}' '${scratch_base}' <<'PY'
+import json, os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 proj = Path(sys.argv[1])
 row = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
 screen = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
-loc_dir = Path(sys.argv[4])
-region_id, region_type, method_id = sys.argv[5:8]
+loc_idx, reg_id, reg_type, scratch_base = sys.argv[4:8]
 
-script_path = proj / "scripts" / "methods" / f"run_{method_id}.R"
-if not script_path.is_file():
-    raise FileNotFoundError(f"Standalone method script not found: {script_path}")
+keep_inter = bool(row.get("keep_intermediates"))
+gwas_log_dir = Path(row["outdir"]) / row["study_id"] / row["gwas_id"] / "logs"
+gwas_log_dir.mkdir(parents=True, exist_ok=True)
+safe_reg = re.sub(r"[^A-Za-z0-9._-]+", "_", reg_id)
 
-cmd = [
-    "Rscript", str(script_path),
-    "--variants", str(loc_dir / "matched_variants.tsv"),
-    "--matrix", str(loc_dir / "matrix.npy"),
-    "--region-id", region_id,
-    "--region-type", region_type,
-    "--out-rds", str(loc_dir / "methods" / method_id / "region_result.rds"),
-    "--qc-json", str(loc_dir / "methods" / method_id / "method_qc.json"),
-    "--max-causal", str(row.get("max_causal", 10)),
-    "--max-iter", str(row.get("max_iter", 50)),
-    "--reference-sample-size", str(screen["reference_sample_size"]),
-    "--allow-skipped-locus", "true",
-]
-if row.get("effective_n") is not None:
-    cmd.extend(["--effective-n", str(row["effective_n"])])
-if method_id == "polyfun" and row.get("polyfun_dir"):
-    cmd.extend(["--polyfun-priors", str(row["polyfun_dir"])])
+if keep_inter:
+    final_loci_root = Path(row["outdir"]) / row["study_id"] / row["gwas_id"] / "loci"
+    final_loc_dir = final_loci_root / reg_id
+    final_loc_dir.mkdir(parents=True, exist_ok=True)
+    work_loc_dir = final_loc_dir
+    cleanup_work = False
+else:
+    final_loci_root = Path(scratch_base)
+    final_loc_dir = final_loci_root / reg_id
+    final_loc_dir.mkdir(parents=True, exist_ok=True)
+    home_res = str(Path.home().resolve())
+    cands = []
+    for raw_c in (os.environ.get("SLURM_TMPDIR"), "/tmp", os.environ.get("TMPDIR")):
+        if raw_c and Path(raw_c).is_dir() and os.access(raw_c, os.W_OK | os.X_OK):
+            cands.append(raw_c)
+    non_home = [
+        c for c in cands
+        if str(Path(c).resolve()) != home_res and not str(Path(c).resolve()).startswith(home_res + "/")
+    ]
+    tmp_root = None
+    for cand in [*non_home, *cands]:
+        try:
+            if shutil.disk_usage(cand).free >= 8 * (1024 ** 3):
+                tmp_root = cand
+                break
+        except OSError:
+            pass
+    if tmp_root is None:
+        tmp_root = str(final_loci_root)
+    work_loc_dir = Path(tempfile.mkdtemp(prefix=f"gwasfm_{safe_reg}_", dir=tmp_root))
+    cleanup_work = True
 
-subprocess.run(cmd, check=True)
+work_tmp_dir = work_loc_dir / "tmp"
+work_tmp_dir.mkdir(parents=True, exist_ok=True)
+sub_env = dict(os.environ)
+sub_env["TMPDIR"] = str(work_tmp_dir)
+
+def run_and_log(cmd: list[str], step_stem: str) -> None:
+    res = subprocess.run(cmd, text=True, capture_output=True, env=sub_env)
+    out_txt = (res.stdout or "")
+    err_txt = (res.stderr or "")
+    combined = out_txt + (("\\n" + err_txt) if err_txt and res.returncode != 0 else "")
+    log_path = gwas_log_dir / f"{step_stem}.log"
+    try:
+        log_path.write_text(combined if combined.strip() else f"[completed] {step_stem}\\n", encoding="utf-8")
+        if err_txt.strip():
+            (gwas_log_dir / f"{step_stem}.err").write_text(err_txt, encoding="utf-8")
+    except OSError as exc:
+        sys.stderr.write(f"[WARN] Could not write step log {log_path}: {exc}\\n")
+    if res.returncode != 0:
+        sys.stderr.write(combined)
+        raise subprocess.CalledProcessError(res.returncode, cmd)
+
+try:
+    prep_cache = str(row["cache_dir"]) if keep_inter else str(work_loc_dir / "cache")
+    prep_cmd = [
+        sys.executable, str(proj / "scripts" / "prep_locus.py"),
+        "--screen-json", sys.argv[3],
+        "--locus-index", str(loc_idx),
+        "--outdir", str(work_loc_dir),
+        "--chain", row["chain"],
+        "--grch37-fasta", row["grch37_fasta"],
+        "--cache-dir", prep_cache,
+    ]
+    if row.get("panukb_dir"):
+        prep_cmd.extend(["--panukb-dir", row["panukb_dir"]])
+    if row.get("local_ld_panel"):
+        prep_cmd.extend(["--local-ld-panel", row["local_ld_panel"]])
+    if row.get("bm_path"):
+        prep_cmd.extend(["--bm-path", row["bm_path"]])
+    if keep_inter:
+        prep_cmd.append("--keep-intermediates")
+
+    run_and_log(prep_cmd, f"02_prep_{safe_reg}")
+
+    prep_qc_src = work_loc_dir / "locus_prep_qc.json"
+    if prep_qc_src.is_file() and work_loc_dir != final_loc_dir:
+        shutil.copy2(prep_qc_src, final_loc_dir / "locus_prep_qc.json")
+
+    prep_qc = json.loads(prep_qc_src.read_text(encoding="utf-8")) if prep_qc_src.is_file() else {}
+    if prep_qc.get("status") == "prepared":
+        variants_tsv = work_loc_dir / "matched_variants.tsv"
+        matrix_npy = work_loc_dir / "matrix.npy"
+        for method_id in row["methods"]:
+            script_path = proj / "scripts" / "methods" / f"run_{method_id}.R"
+            if not script_path.is_file():
+                raise FileNotFoundError(f"Standalone method script not found: {script_path}")
+            out_m_dir = final_loc_dir / "methods" / method_id
+            out_m_dir.mkdir(parents=True, exist_ok=True)
+            m_cmd = [
+                "Rscript", str(script_path),
+                "--variants", str(variants_tsv),
+                "--matrix", str(matrix_npy),
+                "--region-id", reg_id,
+                "--region-type", reg_type,
+                "--out-rds", str(out_m_dir / "region_result.rds"),
+                "--qc-json", str(out_m_dir / "method_qc.json"),
+                "--allow-skipped-locus", "true",
+            ]
+            if method_id != "p_ld":
+                m_cmd.extend([
+                    "--max-causal", str(row.get("max_causal", 10)),
+                    "--max-iter", str(row.get("max_iter", 50)),
+                    "--reference-sample-size", str(screen["reference_sample_size"]),
+                ])
+                if row.get("effective_n") is not None:
+                    m_cmd.extend(["--effective-n", str(row["effective_n"])])
+                if method_id == "polyfun" and row.get("polyfun_dir"):
+                    m_cmd.extend(["--polyfun-priors", str(row["polyfun_dir"])])
+
+            run_and_log(m_cmd, f"03_method_{safe_reg}_{method_id}")
+finally:
+    if cleanup_work:
+        shutil.rmtree(work_loc_dir, ignore_errors=True)
+
+Path(".scratch_loci_root").write_text(str(final_loci_root), encoding="utf-8")
 PY
-    """
-}
-
-process CLEAN_LOCUS_SCRATCH {
-    tag "${row_id}:${region_id}"
-    label 'method_light'
-    cache false
-
-    input:
-    tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(region_id), val(scratch_loci_root)
-
-    output:
-    tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(scratch_loci_root)
-
-    script:
-    def loc_dir = "${scratch_loci_root}/${region_id}"
-    """
-    python3 - '${row_json}' '${loc_dir}' <<'PY'
-import json, sys
-from pathlib import Path
-
-row = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-loc_dir = Path(sys.argv[2])
-if not row.get("keep_intermediates"):
-    for fn in ("matrix.npy", "matrix.ids.txt"):
-        p = loc_dir / fn
-        if p.exists():
-            p.unlink()
-PY
+    SCRATCH_LOCI_ROOT="\$(cat .scratch_loci_root)"
     """
 }
 
@@ -343,8 +335,9 @@ if row.get("keep_intermediates"):
     cmd.append("--keep-intermediates")
 else:
     cmd.append("--cleanup-loci-scratch")
-if row.get("force"):
-    cmd.append("--force")
+# Rows reaching FINALISE_GWAS have already passed PREPARE_MANIFEST idempotency checks,
+# so overwrite any partial non-log files left by a previously interrupted run.
+cmd.append("--force")
 
 try:
     subprocess.run(cmd, check=True)
@@ -416,37 +409,9 @@ workflow {
         }
     }
 
-    PREP_LOCUS(locus_tasks_ch)
+    FINEMAP_LOCUS(locus_tasks_ch)
 
-    method_tasks_ch = PREP_LOCUS.out.flatMap { row_id, row_json, screen_json, n_loci, region_id, region_type, scratch_loci_root ->
-        methods_list.collect { m_id ->
-            tuple(row_id, row_json, screen_json, n_loci, region_id, region_type, scratch_loci_root, m_id)
-        }
-    }
-
-    method_split_ch = method_tasks_ch.branch { row_id, row_json, screen_json, n_loci, region_id, region_type, scratch_loci_root, m_id ->
-        light: m_id == 'p_ld'
-            return tuple(row_id, row_json, screen_json, n_loci, region_id, region_type, scratch_loci_root)
-        heavy: true
-            return tuple(row_id, row_json, screen_json, n_loci, region_id, region_type, scratch_loci_root, m_id)
-    }
-
-    RUN_P_LD(method_split_ch.light)
-    RUN_BAYESIAN_METHOD(method_split_ch.heavy)
-
-    locus_done_ch = RUN_P_LD.out
-        .mix(RUN_BAYESIAN_METHOD.out)
-        .map { row_id, row_json, screen_json, n_loci, region_id, scratch_loci_root ->
-            tuple(groupKey("${row_id}::${region_id}", methods_list.size()), row_id, row_json, screen_json, n_loci, region_id, scratch_loci_root)
-        }
-        .groupTuple(by: 0)
-        .map { locus_gkey, row_ids, row_jsons, screen_jsons, n_locis, region_ids, loci_roots ->
-            tuple(row_ids[0], row_jsons[0], screen_jsons[0], n_locis[0], region_ids[0], loci_roots[0])
-        }
-
-    CLEAN_LOCUS_SCRATCH(locus_done_ch)
-
-    completed_loci_ch = CLEAN_LOCUS_SCRATCH.out
+    completed_loci_ch = FINEMAP_LOCUS.out
         .map { row_id, row_json, screen_json, n_loci, scratch_loci_root ->
             tuple(groupKey(row_id, n_loci as Integer), row_id, row_json, screen_json, scratch_loci_root)
         }

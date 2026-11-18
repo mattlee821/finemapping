@@ -397,5 +397,12 @@ if [[ "$DRY_RUN" != "true" && -f "${LOG_ROOT}/run_manifest.tsv" ]]; then
     ${slurm_out:+--slurm-out "$slurm_out"} || true
 fi
 
+if [[ "$RESUME" -eq 0 && "$KEEP_INTERMEDIATES" != "true" ]]; then
+  rm -rf "${GWASFM_CACHE_DIR}/scratch/${RUN_ID}" 2>/dev/null || true
+  if [[ "$nf_status" -eq 0 && "$summary_status" -eq 0 ]]; then
+    rm -rf "${GWASFM_NXF_WORK}"/[0-9a-f][0-9a-f] 2>/dev/null || true
+  fi
+fi
+
 [[ "$nf_status" -ne 0 ]] && exit "$nf_status"
 exit "$summary_status"
