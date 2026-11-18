@@ -856,10 +856,13 @@ def r_runtime_environment(project_root: Path) -> dict[str, str]:
     if "RENV_PATHS_LIBRARY" not in environment:
         environment["RENV_PATHS_LIBRARY"] = str(tools_root / "renv-library")
     renv_lib_root = Path(environment["RENV_PATHS_LIBRARY"])
-    direct_libs = [
-        p for p in renv_lib_root.glob("*/*/*")
-        if p.is_dir() and (p / "susieR").is_dir()
-    ] if renv_lib_root.is_dir() else []
+    direct_libs: list[Path] = []
+    if renv_lib_root.is_dir():
+        for pat in ("*/*", "*/*/*", "*/*/*/*", "*/*/*/*/*"):
+            direct_libs.extend(
+                p for p in renv_lib_root.glob(pat)
+                if p.is_dir() and (p / "susieR" / "DESCRIPTION").is_file()
+            )
     if direct_libs:
         environment["R_LIBS_USER"] = str(sorted(direct_libs)[0])
         environment["R_PROFILE_USER"] = ""

@@ -31,19 +31,27 @@ fi
 
 echo "=== [2/4] R package build/install & testthat suite ==="
 find src \( -name '*.o' -o -name '*.so' \) -delete 2>/dev/null || true
-R_PROFILE_USER="" R CMD INSTALL --no-multiarch . >/dev/null
-Rscript -e '
+R_TARGET_LIB="$(Rscript -e 'cat(.libPaths()[1])')"
+R_LIBS_ALL="$(Rscript -e 'cat(.libPaths(), sep=":")')"
+if [[ ! -e "${R_TARGET_LIB}/susieR/DESCRIPTION" ]]; then
+  echo "Error: active R library (${R_TARGET_LIB}) does not contain susieR. Run 'bash scripts/source.sh --r-packages' first." >&2
+  exit 1
+fi
+R_LIBS="${R_LIBS_ALL}" R_LIBS_USER="${R_TARGET_LIB}" R_PROFILE_USER="" \
+  R CMD INSTALL --no-multiarch --library="${R_TARGET_LIB}" . >/dev/null
+find src \( -name '*.o' -o -name '*.so' \) -delete 2>/dev/null || true
+R_LIBS="${R_LIBS_ALL}" R_LIBS_USER="${R_TARGET_LIB}" R_PROFILE_USER="" Rscript -e '
   library(gwasfinemapping)
   testthat::test_dir("tests/testthat", reporter = "summary", stop_on_failure = TRUE)
 '
 
 echo "=== [3/4] R CMD check (0 errors, 0 warnings, 0 notes) ==="
 TMP_RCHK="$(mktemp -d "${TMPDIR:-/tmp}/gwasfm-rcheck-XXXXXX")"
-R_LIBS_ALL="$(Rscript -e 'cat(.libPaths(), sep=":")')"
 (
   cd "${TMP_RCHK}"
-  R_PROFILE_USER="" R CMD build --no-build-vignettes --no-manual "${GWASFM_ROOT}" >/dev/null
-  R_LIBS="${R_LIBS_ALL}" R_LIBS_USER="${R_LIBS_ALL}" R_PROFILE_USER="" \
+  R_LIBS="${R_LIBS_ALL}" R_LIBS_USER="${R_TARGET_LIB}" R_PROFILE_USER="" \
+    R CMD build --no-build-vignettes --no-manual "${GWASFM_ROOT}" >/dev/null
+  _R_CHECK_SYSTEM_CLOCK_=0 R_LIBS="${R_LIBS_ALL}" R_LIBS_USER="${R_TARGET_LIB}" R_PROFILE_USER="" \
     R CMD check --no-manual --no-tests gwasfinemapping_*.tar.gz > check.out 2>&1 || {
       cat check.out >&2
       exit 1

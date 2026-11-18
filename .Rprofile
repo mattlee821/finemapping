@@ -6,8 +6,13 @@ if (!nzchar(Sys.getenv("GWASFM_RPROFILE_LOADED", unset = ""))) {
       "RENV_PATHS_LIBRARY",
       unset = file.path(Sys.getenv("HOME"), ".cache", "gwasfinemapping", "renv-library")
     )
-    cands <- Sys.glob(file.path(lib_root, "*", "*", "*"))
-    cands <- cands[dir.exists(file.path(cands, "susieR"))]
+    cands <- c(
+      Sys.glob(file.path(lib_root, "*", "*")),
+      Sys.glob(file.path(lib_root, "*", "*", "*")),
+      Sys.glob(file.path(lib_root, "*", "*", "*", "*")),
+      Sys.glob(file.path(lib_root, "*", "*", "*", "*", "*"))
+    )
+    cands <- cands[file.exists(file.path(cands, "susieR", "DESCRIPTION"))]
     if (length(cands) > 0L) fast_lib <- cands[[1L]]
   }
   if (nzchar(fast_lib) && dir.exists(fast_lib) &&
