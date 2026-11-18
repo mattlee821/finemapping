@@ -95,7 +95,7 @@ def render_manifest_html(outdir: Path) -> Path:
             f"<td class='num'>{r['sig_variants']:,}</td>"
             f"<td class='num'>{r['regions']:,}</td>"
             f"<td class='num'>{r['cs_rss']:,} / {r['cs_rrss']:,} / {r['cs_carma']:,} / {r['cs_polyfun']:,}</td>"
-            f"<td><code>{html.escape(str(r['cis_status']))}</code></td>""
+            f"<td><code>{html.escape(str(r['cis_status']))}</code></td>"
             f"<td><code>{html.escape(str(r['mhc_status']))}</code></td>"
             f"<td class='num'>{r['nonconverged']} / {r['mismatch']}</td>"
             f"<td class='num'>{r['rda_mb']:.2f} MB</td>"
