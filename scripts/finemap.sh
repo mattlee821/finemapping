@@ -43,11 +43,11 @@ Usage:
   bash scripts/finemap.sh [options]
   sbatch scripts/finemap.sh [options]
 
-Inputs (supply one of --input-dir, --manifest, or --vcf, plus --outdir):
+Inputs (supply one of --input-dir, --manifest, or --vcf):
   --input-dir DIR            GWASprocessing root, study standardise/ folder, or single GWAS folder
   --manifest PATH            TSV manifest with 'vcf' or 'gwas_dir' column
   --vcf PATH                 Single GRCh38 GWAS-VCF (.vcf.gz)
-  --outdir DIR               Output directory
+  --outdir DIR               Output directory (default: $GWASFM_WORK_ROOT -> <repo>/finemapping)
 
 Single-GWAS / filter options:
   --only-study STUDY_ID      Filter --input-dir or --manifest to one study_id
@@ -90,7 +90,7 @@ EOF
 INPUT_DIR=""
 MANIFEST=""
 VCF=""
-OUTDIR=""
+OUTDIR="${GWASFM_WORK_ROOT}"
 ONLY_STUDY=""
 STUDY_ID=""
 GWAS_ID=""
@@ -164,8 +164,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$OUTDIR" || ( -z "$VCF" && -z "$MANIFEST" && -z "$INPUT_DIR" ) ]]; then
-  echo "Error: supply --outdir and one of --input-dir, --manifest, or --vcf." >&2
+if [[ -z "$VCF" && -z "$MANIFEST" && -z "$INPUT_DIR" ]]; then
+  echo "Error: supply one of --input-dir, --manifest, or --vcf." >&2
   usage >&2
   exit 2
 fi
@@ -343,18 +343,6 @@ if [[ "$SKIP_NXF" -eq 0 ]]; then
   "${NF_CMD[@]}" || nf_status=$?
 fi
 
-if [[ "$DRY_RUN" != "true" && -f "${LOG_ROOT}/run_manifest.tsv" ]]; then
-  slurm_out=""
-  if [[ -n "${SLURM_JOB_ID:-}" ]]; then
-    slurm_out="${SLURM_SUBMIT_DIR:-${PWD}}/slurm-gwasfm-${SLURM_JOB_ID}.out"
-  fi
-  python3 "${ROOT_DIR}/scripts/prepare_manifest.py" copy-logs \
-    --outdir "$OUTDIR" \
-    --run-manifest "${LOG_ROOT}/run_manifest.tsv" \
-    --nextflow-log "$NXF_LOG" \
-    ${slurm_out:+--slurm-out "$slurm_out"} || true
-fi
-
 summary_status=0
 python3 - "$LOG_ROOT" "$DRY_RUN" <<'PY' || summary_status=$?
 import json, sys
@@ -395,6 +383,19 @@ if not dry_run:
 if (invalid or failed_rows) and not dry_run:
     raise SystemExit(1)
 PY
+
+if [[ "$DRY_RUN" != "true" && -f "${LOG_ROOT}/run_manifest.tsv" ]]; then
+  slurm_out=""
+  if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    slurm_out="${SLURM_SUBMIT_DIR:-${PWD}}/slurm-gwasfm-${SLURM_JOB_ID}.out"
+  fi
+  python3 "${ROOT_DIR}/scripts/prepare_manifest.py" copy-logs \
+    --outdir "$OUTDIR" \
+    --run-manifest "${LOG_ROOT}/run_manifest.tsv" \
+    --nextflow-log "$NXF_LOG" \
+    --trace-file "${LOG_ROOT}/trace.tsv" \
+    ${slurm_out:+--slurm-out "$slurm_out"} || true
+fi
 
 [[ "$nf_status" -ne 0 ]] && exit "$nf_status"
 exit "$summary_status"

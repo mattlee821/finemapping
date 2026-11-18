@@ -148,25 +148,29 @@ out_subset = Path(sys.argv[3])
 
 assert (out_batch / "manifest.html").is_file(), "Missing batch manifest.html"
 assert (out_batch / ".finemap_state.tsv").is_file(), "Missing .finemap_state.tsv"
-assert (out_batch / "sun_synthetic" / "logs").is_dir(), "Missing per-study logs/ folder"
 
 g1 = out_batch / "sun_synthetic" / "P00001_olink"
 g2 = out_batch / "cancer_synthetic" / "colon_rectal_sim"
 g3 = out_nomhc / "sun_synthetic" / "P00002_subthresh_nomhc"
 g4 = out_subset / "cancer_synthetic" / "colon_rectal_subset_rds"
 
-expected_top = {"metadata.json", "provenance.json", "qc.json", "report.html", "methods"}
+expected_top = {"metadata.json", "provenance.json", "qc.json", "report.html", "methods", "logs"}
 expected_rdas = {"p-ld.rda", "susie-rss.rda", "susie-rrss.rda", "carma.rda", "polyfun.rda"}
 
 for gdir in (g1, g2, g3):
     present_top = {p.name for p in gdir.iterdir()}
     assert present_top == expected_top, f"Unexpected top-level files in {gdir}: {present_top}"
+    assert (gdir / "logs" / "01_screen_gwas.log").is_file(), f"Missing 01_screen_gwas.log in {gdir}/logs"
+    assert (gdir / "logs" / "04_finalise_gwas.log").is_file(), f"Missing 04_finalise_gwas.log in {gdir}/logs"
+    assert (gdir / "logs" / "trace.tsv").is_file(), f"Missing trace.tsv in {gdir}/logs"
+    assert any(p.name.startswith("nextflow.") for p in (gdir / "logs").iterdir()), f"Missing nextflow log in {gdir}/logs"
     present_rdas = {p.name for p in (gdir / "methods").iterdir()}
     assert present_rdas == expected_rdas, f"Unexpected .rda files in {gdir}/methods: {present_rdas}"
     assert "p-value.rda" not in present_rdas
     html_text = (gdir / "report.html").read_text(encoding="utf-8")
     assert "data:image/png;base64," in html_text, f"Embedded base64 plot missing in {gdir}/report.html"
 
+assert (g4 / "logs" / "01_screen_gwas.log").is_file(), f"Missing logs in {g4}/logs"
 present_subset = {p.name for p in (g4 / "methods").iterdir()}
 assert present_subset == {"p-ld.rds", "susie-rrss.rds", "polyfun.rds"}, f"Unexpected subset files: {present_subset}"
 

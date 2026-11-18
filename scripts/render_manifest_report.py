@@ -36,9 +36,9 @@ def collect_runs(outdir: Path) -> list[dict[str, Any]]:
         )
         rda_bytes = sum(
             f.stat().st_size
-            for f in (gwas_dir / "methods").glob("*.rda")
-            if f.is_file()
-        )
+            for f in (gwas_dir / "methods").iterdir()
+            if f.is_file() and f.suffix in (".rda", ".rds")
+        ) if (gwas_dir / "methods").is_dir() else 0
         runs.append({
             "study_id": prov.get("study_id", ""),
             "gwas_id": prov.get("gwas_id", ""),
@@ -50,6 +50,8 @@ def collect_runs(outdir: Path) -> list[dict[str, Any]]:
             "regions": qc.get("analyzed_regions_count", 0),
             "cs_rss": qc.get("total_credible_sets_susie_rss", 0),
             "cs_rrss": qc.get("total_credible_sets_susie_rrss", 0),
+            "cs_carma": qc.get("total_credible_sets_carma", 0),
+            "cs_polyfun": qc.get("total_credible_sets_polyfun", 0),
             "cis_status": (qc.get("cis_gene") or {}).get("status", "not_applicable"),
             "mhc_status": (qc.get("mhc") or {}).get("status", "no_significant_variants"),
             "nonconverged": len(qc.get("nonconverged_regions") or []),
@@ -92,8 +94,8 @@ def render_manifest_html(outdir: Path) -> Path:
             f"<td>{status_cell}</td>"
             f"<td class='num'>{r['sig_variants']:,}</td>"
             f"<td class='num'>{r['regions']:,}</td>"
-            f"<td class='num'>{r['cs_rss']:,} / {r['cs_rrss']:,}</td>"
-            f"<td><code>{html.escape(str(r['cis_status']))}</code></td>"
+            f"<td class='num'>{r['cs_rss']:,} / {r['cs_rrss']:,} / {r['cs_carma']:,} / {r['cs_polyfun']:,}</td>"
+            f"<td><code>{html.escape(str(r['cis_status']))}</code></td>""
             f"<td><code>{html.escape(str(r['mhc_status']))}</code></td>"
             f"<td class='num'>{r['nonconverged']} / {r['mismatch']}</td>"
             f"<td class='num'>{r['rda_mb']:.2f} MB</td>"
@@ -169,7 +171,7 @@ th {{ color: var(--muted); font-size: 12px; background: rgba(148, 163, 184, 0.08
       <thead>
         <tr>
           <th>Study</th><th>GWAS (Report)</th><th>Trait</th><th>LD Pop</th><th>Status</th>
-          <th class="num">Sig SNPs</th><th class="num">Regions</th><th class="num">CS (RSS / rRSS)</th>
+          <th class="num">Sig SNPs</th><th class="num">Regions</th><th class="num">CS (RSS / rRSS / CARMA / PolyFun)</th>
           <th>cis Gate</th><th>MHC</th><th class="num">Nonconv / Mismatch</th>
           <th class="num">.rda Size</th><th class="num">Time</th>
         </tr>

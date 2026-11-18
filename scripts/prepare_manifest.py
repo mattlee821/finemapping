@@ -559,6 +559,14 @@ def cmd_prepare(args: argparse.Namespace) -> int:
             row["row_id"] = row_id
             writer.writerow(row)
             if not args.dry_run:
+                row_log_dir = outdir / row["study_id"] / row["gwas_id"] / "logs"
+                if row_log_dir.is_dir():
+                    for stale in row_log_dir.iterdir():
+                        if stale.is_file() and (
+                            stale.name.startswith(("01_", "02_", "03_", "04_"))
+                            or stale.name == "trace.tsv"
+                        ):
+                            stale.unlink()
                 payload = {
                     **row,
                     "outdir": str(outdir),
@@ -686,27 +694,53 @@ def cmd_copy_logs(args: argparse.Namespace) -> int:
     outdir = Path(args.outdir).expanduser().resolve()
     if args.row_json and Path(args.row_json).is_file():
         row = json.loads(Path(args.row_json).read_text(encoding="utf-8"))
-        log_dir = outdir / row["study_id"] / "logs"
+        log_dir = outdir / row["study_id"] / row["gwas_id"] / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        for cand in (".command.log", ".command.err"):
-            p = Path(cand)
+        step_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", (args.step_name or row["gwas_id"]).strip())
+        wrote_log = False
+        for cand_name in (".command.log", ".command.out"):
+            p = Path(cand_name)
             if p.is_file() and p.stat().st_size > 0:
-                shutil.copy2(p, log_dir / f"{row['gwas_id']}{cand}")
+                shutil.copy2(p, log_dir / f"{step_stem}.log")
+                wrote_log = True
+                break
+        if not wrote_log:
+            (log_dir / f"{step_stem}.log").write_text(f"[completed] {step_stem}\n", encoding="utf-8")
+        err_p = Path(".command.err")
+        if err_p.is_file() and err_p.stat().st_size > 0:
+            shutil.copy2(err_p, log_dir / f"{step_stem}.err")
         return 0
 
-    studies: set[str] = set()
+    manifest_rows: list[dict[str, str]] = []
     if args.run_manifest and Path(args.run_manifest).is_file():
         with Path(args.run_manifest).open(encoding="utf-8", newline="") as fh:
             for r in csv.DictReader(fh, delimiter="\t"):
-                if r.get("study_id"):
-                    studies.add(r["study_id"])
-    for sid in sorted(studies):
-        log_dir = outdir / sid / "logs"
+                if r.get("study_id") and r.get("gwas_id"):
+                    manifest_rows.append(r)
+
+    trace_header = ""
+    trace_lines: list[str] = []
+    if args.trace_file and Path(args.trace_file).is_file():
+        raw_trace = Path(args.trace_file).read_text(encoding="utf-8", errors="replace").splitlines()
+        if raw_trace:
+            trace_header = raw_trace[0]
+            trace_lines = raw_trace[1:]
+
+    for r in manifest_rows:
+        log_dir = outdir / r["study_id"] / r["gwas_id"] / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         if args.nextflow_log and Path(args.nextflow_log).is_file():
             shutil.copy2(args.nextflow_log, log_dir / Path(args.nextflow_log).name)
         if args.slurm_out and Path(args.slurm_out).is_file():
             shutil.copy2(args.slurm_out, log_dir / Path(args.slurm_out).name)
+        row_id = r.get("row_id", "")
+        if trace_header and row_id:
+            matched_trace = [ln for ln in trace_lines if row_id in ln]
+            if matched_trace:
+                (log_dir / "trace.tsv").write_text(
+                    "\n".join([trace_header, *matched_trace]) + "\n",
+                    encoding="utf-8",
+                )
     return 0
 
 
@@ -774,8 +808,10 @@ def main() -> int:
     p_log = sub.add_parser("copy-logs")
     p_log.add_argument("--outdir", required=True)
     p_log.add_argument("--row-json")
+    p_log.add_argument("--step-name")
     p_log.add_argument("--run-manifest")
     p_log.add_argument("--nextflow-log")
+    p_log.add_argument("--trace-file")
     p_log.add_argument("--slurm-out")
 
     args = parser.parse_args()

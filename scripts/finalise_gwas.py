@@ -101,9 +101,18 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
     methods = parse_methods_list(args.methods)
 
     output_dir = Path(args.output_root).expanduser().resolve() / study_id / gwas_id
-    if output_dir.exists() and any(output_dir.iterdir()):
+    existing_non_logs = (
+        [p for p in output_dir.iterdir() if p.name != "logs"]
+        if output_dir.exists()
+        else []
+    )
+    if existing_non_logs:
         if args.force:
-            shutil.rmtree(output_dir)
+            for item in existing_non_logs:
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
         else:
             raise FileExistsError(f"Output directory is not empty: {output_dir} (pass --force)")
     output_dir.mkdir(parents=True, exist_ok=True)

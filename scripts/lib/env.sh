@@ -47,6 +47,16 @@ gwasfm_resolve_paths() {
   gwasfm_load_dotenv "${GWASFM_ROOT}/.env"
 
   local default_cache="${HOME}/.cache/gwasfinemapping"
+  if [[ -z "${GWASFM_WORK_ROOT:-}" ]]; then
+    if gwasfm_in_cloud_sync "${GWASFM_ROOT}"; then
+      export GWASFM_WORK_ROOT="${HOME}/GWASfinemapping-data/finemapping"
+    else
+      export GWASFM_WORK_ROOT="${GWASFM_ROOT}/finemapping"
+    fi
+  elif [[ "${GWASFM_WORK_ROOT}" != /* ]]; then
+    export GWASFM_WORK_ROOT="${GWASFM_ROOT}/${GWASFM_WORK_ROOT}"
+  fi
+
   if [[ -z "${GWASFM_TOOLS_ROOT:-}" ]]; then
     export GWASFM_TOOLS_ROOT="${default_cache}"
   elif [[ "${GWASFM_TOOLS_ROOT}" != /* ]]; then

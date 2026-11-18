@@ -30,6 +30,7 @@ Tools, reference lookups, Nextflow work directories and caches live outside the 
 
 | Setting in `.env` | Holds |
 |---|---|
+| `GWASFM_WORK_ROOT` | the fine-mapping outputs, per-GWAS `logs/`, and `manifest.html` (default `<repo>/finemapping`, or `~/GWASfinemapping-data/finemapping` when the repository is inside a cloud-synced folder) |
 | `GWASFM_TOOLS_ROOT` | the private micromamba environment (`env/`), `renv-library/`, and pulled `.sif` image (default `~/.cache/gwasfinemapping`) |
 | `GWASFM_REFERENCE_ROOT` | the installed reference data (~3.8 GB: chain, GRCh37 FASTA, GRCh38 gene map, 6 Pan-UKB whole-population variant indexes, and PolyFun UKB functional priors; default `<GWASFM_TOOLS_ROOT>/reference`) |
 | `GWASFM_CACHE_DIR` | per-run logs (`logs/runs/<run_id>/`), regional index cuts (`panukb/`), and temporary per-locus scratch LD matrices (`scratch/<session_id>/`, deleted automatically as each locus finishes) |
@@ -160,51 +161,50 @@ All 5 methods run by default (`--methods "p-ld susie-rss susie-rrss carma polyfu
 
 #### 3. Run it
 
+When `--outdir` is omitted, outputs default to `$GWASFM_WORK_ROOT` (`~/GWASfinemapping/finemapping/<STUDYID>/<GWASID>/`).
+
 ```bash
 # Dry-run preflight on a single study from GWASprocessing
 bash scripts/finemap.sh \
   --input-dir /home/leem/GWASprocessing/GWAS/sun_2023_37794186 \
   --ld-pop EUR \
-  --outdir /home/leem/GWASfinemapping/results \
   --dry-run
 
 # Local execution: 1 GWAS, all 5 methods
 bash scripts/finemap.sh \
   --input-dir /home/leem/GWASprocessing/GWAS/locke_2015_25673413/standardise/GWAScatalog_GCST002783 \
-  --ld-pop EUR \
-  --outdir /home/leem/GWASfinemapping/results
+  --ld-pop EUR
 
 # Local or interactive node: custom subset of methods
 bash scripts/finemap.sh \
   --input-dir /home/leem/GWASprocessing/GWAS/sun_2023_37794186 \
   --methods "p-ld susie-rrss polyfun" \
-  --ld-pop EUR \
-  --outdir /home/leem/GWASfinemapping/results
+  --ld-pop EUR
 
 # Submit orchestrator to SLURM (fans out SCREEN_GWAS, PREP_LOCUS, and method tasks as SLURM jobs)
 sbatch scripts/finemap.sh \
-  --input-dir /home/leem/GWASprocessing/GWAS/sun_2023_37794186 \
+  --manifest manifests/sun_mr18.tsv \
   --ld-pop EUR \
   --max-forks 16 \
-  --outdir /home/leem/GWASfinemapping/results \
   --slurm
 ```
 
 #### 4. Check what has been processed
 
-Open `<outdir>/manifest.html`. Updated after every run, it summarises every GWAS in `<outdir>` with its study, trait, LD panel, status badge, analyzed region count, 95% credible-set counts, and links to per-GWAS reports. Each GWAS writes to `<outdir>/<STUDYID>/<GWAS_ID>/`:
+Open `<outdir>/manifest.html` (by default `~/GWASfinemapping/finemapping/manifest.html`). Updated after every run, it summarises every GWAS in `<outdir>` with its study, trait, LD panel, status badge, analyzed region count, 95% credible-set counts, and links to per-GWAS reports. Each GWAS writes its outputs and logs to `<outdir>/<STUDYID>/<GWAS_ID>/`:
 
 ```text
-<outdir>/
+finemapping/
   manifest.html                       batch dashboard across all studies in <outdir>
   .finemap_state.tsv                  idempotent completion ledger (keyed by settings_hash)
   <STUDYID>/
-    logs/                             Nextflow run log and per-GWAS task logs
     <GWAS_ID>/
       metadata.json                   upstream study metadata + fine-mapping summary counts
       provenance.json                 build, chain SHA-256, Pan-UKB panel N, thresholds, runtime
       qc.json                         per-locus mapping/LD/method diagnostics + step_telemetry
       report.html                     self-contained HTML report (tables, flags, base64 locus plots)
+      logs/                           01_screen_gwas.log, 02_prep_*.log, 03_method_*.log,
+                                      04_finalise_gwas.log, trace.tsv, nextflow.*.log, slurm-*.out
       methods/
         p-ld.rda                      greedy r²-pruned sets at r² < 0.1, 0.01, 0.001
         susie-rss.rda                 SuSiE-RSS PIPs, 95% CSs, diagnostics, coloc-ready fit

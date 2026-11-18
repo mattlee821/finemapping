@@ -8,6 +8,7 @@
 *.export.tsv.bgz
 hail-*.log
 data/
+finemapping/
 results/
 output/
 ..Rcheck/

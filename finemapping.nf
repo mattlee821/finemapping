@@ -76,6 +76,7 @@ process PREPARE_MANIFEST {
 process SCREEN_GWAS {
     tag "${row_id}"
     cache false
+    afterScript { "python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' --step-name '01_screen_gwas' || true" }
 
     input:
     tuple val(row_id), path(row_json)
@@ -143,6 +144,7 @@ process PREP_LOCUS {
     tag "${row_id}:${region_id}"
     label 'stage_prep'
     cache false
+    afterScript { "python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' --step-name '02_prep_${region_id}' || true" }
 
     input:
     tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(locus_index), val(region_id), val(region_type)
@@ -194,6 +196,7 @@ process RUN_P_LD {
     tag "${row_id}:${region_id}:p_ld"
     label 'method_light'
     cache false
+    afterScript { "python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' --step-name '03_method_${region_id}_p_ld' || true" }
 
     input:
     tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(region_id), val(region_type), val(scratch_loci_root)
@@ -219,6 +222,7 @@ process RUN_BAYESIAN_METHOD {
     tag "${row_id}:${region_id}:${method_id}"
     label 'method_heavy'
     cache false
+    afterScript { "python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' --step-name '03_method_${region_id}_${method_id}' || true" }
 
     input:
     tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(region_id), val(region_type), val(scratch_loci_root), val(method_id)
@@ -298,7 +302,7 @@ PY
 process FINALISE_GWAS {
     tag "${row_id}"
     cache false
-    afterScript "python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' || true"
+    afterScript { "python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' --step-name '04_finalise_gwas' || true" }
 
     input:
     tuple val(row_id), path(row_json), path(screen_json), val(scratch_loci_root)

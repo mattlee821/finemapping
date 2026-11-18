@@ -25,4 +25,6 @@ renv/staging/
 renv/sandbox/
 __pycache__/
 references/
+finemapping/
+manifests/*.tsv
 docs/papers/*.pdf
