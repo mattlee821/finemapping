@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Install the reference data a run needs (Pan-UKB variant indexes, GRCh37 FASTA, liftover chain, gene annotation).
+# Install the reference data a run needs (Pan-UKB variant indexes, GRCh37 FASTA, liftover chain, gene annotation, PolyFun priors).
 #
 # Usage:
-#   bash scripts/install_reference_data.sh                      # everything, all 6 Pan-UKB populations
-#   bash scripts/install_reference_data.sh --only genome,annotation
+#   bash scripts/install_reference_data.sh                      # everything (genome, annotation, panukb 6 pops, polyfun)
+#   bash scripts/install_reference_data.sh --only genome,annotation,polyfun
 #   bash scripts/install_reference_data.sh --only panukb --populations EUR,AFR
 #   bash scripts/install_reference_data.sh check                # report what is missing or changed
 #   bash scripts/install_reference_data.sh paths --nextflow     # the installed files as nextflow run options

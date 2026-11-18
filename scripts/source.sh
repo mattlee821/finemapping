@@ -2,9 +2,10 @@
 # Install and activate the local GWASfinemapping runtime environment (and optional GHCR image).
 #
 # Usage:
-#   bash scripts/source.sh                    # install conda/Python tools + R packages (renv + R CMD INSTALL .)
-#   bash scripts/source.sh --tools-only       # install conda/Python/Java/R runtime without renv restore
-#   bash scripts/source.sh --r-packages       # restore renv.lock and install the local R package
+#   bash scripts/source.sh                    # install conda/Python tools + R packages (renv + CARMA + gwasfinemapping)
+#   bash scripts/source.sh --tools-only       # install conda/Python/Java/R runtime without R package restore
+#   bash scripts/source.sh --r-packages       # restore renv.lock, install CARMA, and install gwasfinemapping
+#   bash scripts/source.sh --reference-only   # download and verify reference data (delegates to install_reference_data.sh)
 #   bash scripts/source.sh --container apptainer
 #   bash scripts/source.sh --container docker
 #   bash scripts/source.sh --env-only         # write .env from .env.example if absent
@@ -250,12 +251,13 @@ pull_container() {
 
 main() {
   set -euo pipefail
-  local tools_only=0 r_only=0 env_only=0 container="" container_set=0
+  local tools_only=0 r_only=0 ref_only=0 env_only=0 container="" container_set=0
   FORCE=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --tools-only) tools_only=1 ;;
       --r-packages) r_only=1 ;;
+      --reference-only) ref_only=1 ;;
       --env-only) env_only=1 ;;
       --force) FORCE=1 ;;
       --container)
@@ -265,7 +267,7 @@ main() {
         shift
         ;;
       --container=*) container="${1#*=}"; container_set=1 ;;
-      -h|--help) sed -n '2,12p' "${BASH_SOURCE[0]}"; return 0 ;;
+      -h|--help) sed -n '2,13p' "${BASH_SOURCE[0]}"; return 0 ;;
       *) echo "Unknown option: $1" >&2; return 2 ;;
     esac
     shift
@@ -277,6 +279,12 @@ main() {
     container="${GWASFM_CONTAINER:-}"
   fi
   if [[ "$env_only" -eq 1 ]]; then
+    return 0
+  fi
+  if [[ "$ref_only" -eq 1 ]]; then
+    local ref_flags=()
+    [[ "$FORCE" -eq 1 ]] && ref_flags+=(--force)
+    bash "${ROOT_DIR}/scripts/install_reference_data.sh" install ${ref_flags[@]+"${ref_flags[@]}"}
     return 0
   fi
   if gwasfm_in_container; then

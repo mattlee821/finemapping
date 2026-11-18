@@ -103,9 +103,10 @@ gwasfm_activate_runtime() {
 
   export RENV_PROJECT="${GWASFM_ROOT}"
   export RENV_PATHS_LIBRARY="${RENV_PATHS_LIBRARY:-${GWASFM_TOOLS_ROOT}/renv-library}"
-  local _direct_r_lib=""
+  local _direct_r_lib="" _susie_dir=""
   if [[ -d "${RENV_PATHS_LIBRARY}" ]]; then
-    _direct_r_lib="$(find "${RENV_PATHS_LIBRARY}" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | head -n 1 || true)"
+    _susie_dir="$(find "${RENV_PATHS_LIBRARY}" -mindepth 2 -maxdepth 6 -type d -name "susieR" 2>/dev/null | head -n 1 || true)"
+    [[ -n "${_susie_dir}" ]] && _direct_r_lib="$(dirname "${_susie_dir}")"
   fi
   if [[ -n "${_direct_r_lib}" && -d "${_direct_r_lib}/susieR" ]]; then
     export R_LIBS_USER="${_direct_r_lib}"

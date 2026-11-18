@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+#SBATCH --job-name=gwasfm_benchmark
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
+#SBATCH --time=08:00:00
+#SBATCH --output=slurm-gwasfm-bench-%j.out
+#
 # Validate an installation by fine-mapping the two reproducible benchmark GWAS
 # (Locke 2015 BMI + Sun 2023 UKB-PPP NPPB P16860_OID20049) against public Pan-UKB EUR LD
 # and comparing variant-by-variant results against benchmark/expected/ (mirrors GWASprocessing/src/benchmark.sh).
@@ -6,6 +14,7 @@
 # Usage:
 #   bash scripts/benchmark.sh                              # real-data benchmark (skips already-completed rows unless --force)
 #   bash scripts/benchmark.sh --force                      # force re-run from scratch
+#   sbatch scripts/benchmark.sh --force                    # submit benchmark to SLURM
 #   bash scripts/benchmark.sh --gwas-root /path/to/GWAS    # explicit GWASprocessing output root
 #   bash scripts/benchmark.sh --update-expected            # write/update benchmark/expected/*.json
 #   bash scripts/benchmark.sh --offline                    # fast zero-network synthetic benchmark (for CI)
@@ -14,6 +23,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ ! -f "${SCRIPT_DIR}/lib/env.sh" && -n "${SLURM_SUBMIT_DIR:-}" && -f "${SLURM_SUBMIT_DIR}/scripts/lib/env.sh" ]]; then
+  SCRIPT_DIR="${SLURM_SUBMIT_DIR}/scripts"
+fi
 # shellcheck source=lib/env.sh
 source "${SCRIPT_DIR}/lib/env.sh"
 gwasfm_activate_runtime
