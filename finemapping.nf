@@ -225,6 +225,14 @@ cmd.append("--force")
 
 try:
     subprocess.run(cmd, check=True)
+    subprocess.run([
+        sys.executable,
+        str(Path(fin_script).with_name("prepare_manifest.py")),
+        "update-state",
+        "--state-file", str(Path(row["outdir"]) / ".finemap_state.tsv"),
+        "--records", f"{row_id}.row_record.json",
+        "--skip-manifest-report",
+    ], check=False)
 except Exception as exc:
     Path(f"{row_id}.row_record.json").write_text(json.dumps({
         "ok": False,

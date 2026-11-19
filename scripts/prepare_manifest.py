@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fcntl
 import gzip
 import hashlib
 import json
@@ -13,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -625,68 +627,74 @@ def cmd_prepare(args: argparse.Namespace) -> int:
 
 def cmd_update_state(args: argparse.Namespace) -> int:
     state_file = Path(args.state_file).expanduser().resolve()
-    state = load_state(state_file)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = state_file.parent / f"{state_file.name}.lock"
+
     updated = 0
     failed = 0
     completed_keys: list[str] = []
     failed_rows: list[dict[str, Any]] = []
 
-    for rec_path_str in args.records:
-        rec_path = Path(rec_path_str)
-        if not rec_path.is_file():
-            continue
-        rec = json.loads(rec_path.read_text(encoding="utf-8"))
-        rkey = rec["row_key"]
-        if rec.get("ok"):
-            state[rkey] = {
-                "row_key": rkey,
-                "study_id": rec["study_id"],
-                "gwas_id": rec["gwas_id"],
-                "settings_hash": rec["settings_hash"],
-                "status": rec.get("overall_status", "PASS"),
-                "analyzed_regions": str(rec.get("analyzed_regions", 0)),
-                "cs_rss": str(rec.get("cs_rss", 0)),
-                "cs_rrss": str(rec.get("cs_rrss", 0)),
-                "output_dir": rec.get("output_dir", ""),
-            }
-            updated += 1
-            completed_keys.append(rkey)
-        else:
-            failed += 1
-            failed_rows.append({
-                "row_key": rkey,
-                "study_id": rec.get("study_id", ""),
-                "gwas_id": rec.get("gwas_id", ""),
-                "error": rec.get("error", "task failed"),
-            })
+    with open(lock_path, "a+", encoding="utf-8") as lock_fh:
+        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        state = load_state(state_file)
 
-    if updated > 0 or state_file.is_file():
-        state_file.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=state_file.parent, newline="", delete=False) as tmp:
-            writer = csv.DictWriter(tmp, fieldnames=STATE_COLUMNS, delimiter="\t")
-            writer.writeheader()
-            for k in sorted(state):
-                writer.writerow(state[k])
-            tmp_path = Path(tmp.name)
-        os.replace(tmp_path, state_file)
+        for rec_path_str in args.records:
+            rec_path = Path(rec_path_str)
+            if not rec_path.is_file():
+                continue
+            rec = json.loads(rec_path.read_text(encoding="utf-8"))
+            rkey = rec["row_key"]
+            if rec.get("ok"):
+                state[rkey] = {
+                    "row_key": rkey,
+                    "study_id": rec["study_id"],
+                    "gwas_id": rec["gwas_id"],
+                    "settings_hash": rec["settings_hash"],
+                    "status": rec.get("overall_status", "PASS"),
+                    "analyzed_regions": str(rec.get("analyzed_regions", 0)),
+                    "cs_rss": str(rec.get("cs_rss", 0)),
+                    "cs_rrss": str(rec.get("cs_rrss", 0)),
+                    "output_dir": rec.get("output_dir", ""),
+                }
+                updated += 1
+                completed_keys.append(rkey)
+            else:
+                failed += 1
+                failed_rows.append({
+                    "row_key": rkey,
+                    "study_id": rec.get("study_id", ""),
+                    "gwas_id": rec.get("gwas_id", ""),
+                    "error": rec.get("error", "task failed"),
+                })
 
-    if args.outdir:
+        if updated > 0 or state_file.is_file():
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=state_file.parent, newline="", delete=False) as tmp:
+                writer = csv.DictWriter(tmp, fieldnames=STATE_COLUMNS, delimiter="\t")
+                writer.writeheader()
+                for k in sorted(state):
+                    writer.writerow(state[k])
+                tmp_path = Path(tmp.name)
+            os.replace(tmp_path, state_file)
+
+    if args.outdir and not getattr(args, "skip_manifest_report", False):
         manifest_script = Path(__file__).with_name("render_manifest_report.py")
         if manifest_script.is_file():
             subprocess.run(
-                ["python3", str(manifest_script), "--outdir", str(Path(args.outdir).resolve())],
+                [sys.executable, str(manifest_script), "--outdir", str(Path(args.outdir).resolve())],
                 check=False,
             )
 
-    atomic_write_json(
-        Path(args.output).resolve(),
-        {
-            "updated": updated,
-            "failed": failed,
-            "completed_keys": completed_keys,
-            "failed_rows": failed_rows,
-        },
-    )
+    if args.output:
+        atomic_write_json(
+            Path(args.output).resolve(),
+            {
+                "updated": updated,
+                "failed": failed,
+                "completed_keys": completed_keys,
+                "failed_rows": failed_rows,
+            },
+        )
     return 0
 
 
@@ -808,7 +816,8 @@ def main() -> int:
     p_upd = sub.add_parser("update-state")
     p_upd.add_argument("--state-file", required=True)
     p_upd.add_argument("--outdir")
-    p_upd.add_argument("--output", required=True)
+    p_upd.add_argument("--output", default="")
+    p_upd.add_argument("--skip-manifest-report", action="store_true")
     p_upd.add_argument("--records", nargs="*", default=[])
 
     p_log = sub.add_parser("copy-logs")

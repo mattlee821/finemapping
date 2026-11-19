@@ -310,6 +310,7 @@ if [[ -z "$CONTAINER_ENGINE" && -z "${GWASFM_CONTAINER:-}" ]]; then
   fi
 fi
 
+[[ -n "$MAX_FORKS" ]] && export GWASFM_MAX_FORKS="$MAX_FORKS"
 NF_CMD=(
   nextflow
   -log "$NXF_LOG"
