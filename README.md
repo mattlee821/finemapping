@@ -155,6 +155,7 @@ All 5 methods run by default (`--methods "p-ld susie-rss susie-rrss carma polyfu
 | `--row-limit INT` | `0` (all) | run at most `INT` incomplete GWAS rows from the discovered batch |
 | `--max-forks INT` | `$GWASFM_MAX_FORKS` or `2` | maximum concurrent tasks / SLURM queue size |
 | `--report true\|false` | `true` | render self-contained per-GWAS `report.html` during finalisation |
+| `--temp-dir DIR` | `$GWASFM_TEMP_ROOT` | scratch/temp root for Nextflow workdirs, run logs, locus `matrix.npy`, and `TMPDIR` (e.g. `/scratch/<user>/GWASfinemapping`) |
 | `--keep-intermediates` | `false` | retain per-locus lifted VCFs, mapping tables, and `matrix.npy` files under `<outdir>/<study_id>/<gwas_id>/loci/` |
 | `--dry-run` | `false` | run manifest discovery and preflight validation without launching fine-mapping |
 | `--force` | `false` | re-run rows even when complete outputs exist for the current settings hash |

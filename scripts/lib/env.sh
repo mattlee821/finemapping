@@ -69,11 +69,23 @@ gwasfm_resolve_paths() {
   if [[ -z "${GWASFM_CACHE_DIR:-}" ]]; then
     export GWASFM_CACHE_DIR="${GWASFM_TOOLS_ROOT}"
   fi
-  if [[ -z "${GWASFM_NXF_WORK:-}" ]]; then
-    if gwasfm_in_cloud_sync "${GWASFM_ROOT}"; then
-      export GWASFM_NXF_WORK="${GWASFM_TOOLS_ROOT}/nextflow-work"
+  if [[ -n "${GWASFM_TEMP_ROOT:-}" ]]; then
+    if [[ "${GWASFM_TEMP_ROOT}" != /* ]]; then
+      export GWASFM_TEMP_ROOT="${GWASFM_ROOT}/${GWASFM_TEMP_ROOT}"
     else
-      export GWASFM_NXF_WORK="${GWASFM_TOOLS_ROOT}/nextflow-work"
+      export GWASFM_TEMP_ROOT
+    fi
+    export GWASFM_SCRATCH_DIR="${GWASFM_SCRATCH_DIR:-${GWASFM_TEMP_ROOT}/scratch}"
+    export GWASFM_NXF_WORK="${GWASFM_NXF_WORK:-${GWASFM_TEMP_ROOT}/nextflow-work}"
+    export GWASFM_TMP_DIR="${GWASFM_TMP_DIR:-${GWASFM_TEMP_ROOT}/tmp}"
+  else
+    export GWASFM_SCRATCH_DIR="${GWASFM_SCRATCH_DIR:-${GWASFM_CACHE_DIR}/scratch}"
+    if [[ -z "${GWASFM_NXF_WORK:-}" ]]; then
+      if gwasfm_in_cloud_sync "${GWASFM_ROOT}"; then
+        export GWASFM_NXF_WORK="${GWASFM_TOOLS_ROOT}/nextflow-work"
+      else
+        export GWASFM_NXF_WORK="${GWASFM_TOOLS_ROOT}/nextflow-work"
+      fi
     fi
   fi
   if [[ -z "${NXF_HOME:-}" ]] && gwasfm_in_cloud_sync "${GWASFM_ROOT}"; then

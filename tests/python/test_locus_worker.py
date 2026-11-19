@@ -133,6 +133,21 @@ class LocusWorkerScratchTests(unittest.TestCase):
         self.assertTrue(locus_worker.is_enospc_failure("OSError: [Errno 28] No space left on device"))
         self.assertFalse(locus_worker.is_enospc_failure("ValueError: invalid allele"))
 
+    def test_explicit_temp_workdir_stages_inside_requested_dir_and_cleans_up(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            explicit_root = Path(td) / "scratch_root" / "tmp"
+            claim = locus_worker.allocate_explicit_temp_workdir("chr6_1_2", explicit_root)
+            self.assertFalse(claim.using_node_tmp)
+            self.assertTrue(claim.cleanup_on_exit)
+            self.assertEqual(claim.work_dir.parent, explicit_root)
+            self.assertTrue(claim.work_dir.is_dir())
+            self.assertTrue((claim.work_dir / ".owner_pid").is_file())
+
+            locus_worker.release_locus_workdir(claim)
+            self.assertFalse(claim.work_dir.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

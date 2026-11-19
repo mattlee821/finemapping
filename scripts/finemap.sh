@@ -48,6 +48,7 @@ Inputs (supply one of --input-dir, --manifest, or --vcf):
   --manifest PATH            TSV manifest with 'vcf' or 'gwas_dir' column
   --vcf PATH                 Single GRCh38 GWAS-VCF (.vcf.gz)
   --outdir DIR               Output directory (default: $GWASFM_WORK_ROOT -> <repo>/finemapping)
+  --temp-dir DIR             Scratch/temp root for Nextflow workdirs, run logs, locus matrix.npy, and TMPDIR (default: $GWASFM_TEMP_ROOT)
 
 Single-GWAS / filter options:
   --only-study STUDY_ID      Filter --input-dir or --manifest to one study_id
@@ -91,6 +92,7 @@ INPUT_DIR=""
 MANIFEST=""
 VCF=""
 OUTDIR="${GWASFM_WORK_ROOT}"
+TEMP_DIR_OPT=""
 ONLY_STUDY=""
 STUDY_ID=""
 GWAS_ID=""
@@ -128,6 +130,7 @@ while [[ $# -gt 0 ]]; do
     --manifest) MANIFEST="$2"; shift 2 ;;
     --vcf) VCF="$2"; shift 2 ;;
     --outdir) OUTDIR="$2"; shift 2 ;;
+    --temp-dir|--temp_dir) TEMP_DIR_OPT="$2"; shift 2 ;;
     --only-study|--only_study) ONLY_STUDY="$2"; shift 2 ;;
     --study-id|--study_id) STUDY_ID="$2"; shift 2 ;;
     --gwas-id|--gwas_id) GWAS_ID="$2"; shift 2 ;;
@@ -179,6 +182,7 @@ resolve_abs() {
 }
 
 OUTDIR="$(resolve_abs "$OUTDIR")"
+[[ -n "$TEMP_DIR_OPT" ]] && TEMP_DIR_OPT="$(resolve_abs "$TEMP_DIR_OPT")"
 REF_ROOT="$(resolve_abs "$REF_ROOT")"
 [[ -n "$INPUT_DIR" ]] && INPUT_DIR="$(resolve_abs "$INPUT_DIR")"
 [[ -n "$MANIFEST" ]] && MANIFEST="$(resolve_abs "$MANIFEST")"
@@ -222,10 +226,27 @@ elif [[ -n "${GWASFM_CONTAINER:-}" ]]; then
 fi
 
 RUN_ID="${SLURM_JOB_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
-LOG_ROOT="${GWASFM_CACHE_DIR}/logs/runs/${RUN_ID}"
+TEMP_ROOT="${TEMP_DIR_OPT:-${GWASFM_TEMP_ROOT:-}}"
+if [[ -n "$TEMP_ROOT" ]]; then
+  TEMP_ROOT="$(resolve_abs "$TEMP_ROOT")"
+  SCRATCH_ROOT="${TEMP_ROOT}/scratch"
+  LOG_ROOT="${TEMP_ROOT}/logs/runs/${RUN_ID}"
+  RUN_TMP_DIR="${TEMP_ROOT}/tmp/${RUN_ID}"
+  if [[ -n "$TEMP_DIR_OPT" ]]; then
+    export GWASFM_NXF_WORK="${TEMP_ROOT}/nextflow-work"
+  fi
+  export TMPDIR="${RUN_TMP_DIR}"
+  export NXF_TEMP="${RUN_TMP_DIR}"
+  export NXF_CACHE_DIR="${GWASFM_NXF_WORK}/nxf-cache"
+  mkdir -p "$OUTDIR" "$LOG_ROOT" "${GWASFM_NXF_WORK}" "${NXF_CACHE_DIR}" "${SCRATCH_ROOT}" "${RUN_TMP_DIR}"
+else
+  SCRATCH_ROOT="${GWASFM_SCRATCH_DIR:-${GWASFM_CACHE_DIR}/scratch}"
+  LOG_ROOT="${GWASFM_CACHE_DIR}/logs/runs/${RUN_ID}"
+  RUN_TMP_DIR="${GWASFM_TMP_DIR:-}"
+  export NXF_CACHE_DIR="${GWASFM_NXF_WORK}/nxf-cache"
+  mkdir -p "$OUTDIR" "$LOG_ROOT" "${GWASFM_NXF_WORK}" "${NXF_CACHE_DIR}"
+fi
 NXF_LOG="${LOG_ROOT}/nextflow.${RUN_ID}.log"
-export NXF_CACHE_DIR="${GWASFM_NXF_WORK}/nxf-cache"
-mkdir -p "$OUTDIR" "$LOG_ROOT" "${GWASFM_NXF_WORK}" "${NXF_CACHE_DIR}"
 
 # Fast preflight path on host: skip Nextflow JVM startup for --dry-run or when all rows are already complete
 SKIP_NXF=0
@@ -298,6 +319,7 @@ NF_CMD=(
   -with-trace "${LOG_ROOT}/trace.tsv"
   --outdir "$OUTDIR"
   --log_root "$LOG_ROOT"
+  --scratch_dir "$SCRATCH_ROOT"
   --chain "$CHAIN"
   --grch37_fasta "$FASTA"
   --grch37_fai "$FAI"
@@ -336,6 +358,7 @@ NF_CMD=(
 [[ -n "$MAX_FORKS" ]] && NF_CMD+=(--max_forks "$MAX_FORKS")
 [[ -n "$LOCAL_LD_PANEL" ]] && NF_CMD+=(--local_ld_panel "$LOCAL_LD_PANEL")
 [[ -n "$BM_PATH" ]] && NF_CMD+=(--bm_path "$BM_PATH")
+[[ -n "$RUN_TMP_DIR" ]] && NF_CMD+=(--temp_dir "$RUN_TMP_DIR")
 [[ "$RESUME" -eq 1 ]] && NF_CMD+=(-resume)
 
 nf_status=0
@@ -398,7 +421,10 @@ if [[ "$DRY_RUN" != "true" && -f "${LOG_ROOT}/run_manifest.tsv" ]]; then
 fi
 
 if [[ "$RESUME" -eq 0 && "$KEEP_INTERMEDIATES" != "true" ]]; then
-  rm -rf "${GWASFM_CACHE_DIR}/scratch/${RUN_ID}" 2>/dev/null || true
+  rm -rf "${SCRATCH_ROOT}/${RUN_ID}" 2>/dev/null || true
+  if [[ -n "$TEMP_ROOT" && -n "$RUN_TMP_DIR" ]]; then
+    rm -rf "${RUN_TMP_DIR}" 2>/dev/null || true
+  fi
   if [[ "$nf_status" -eq 0 && "$summary_status" -eq 0 ]]; then
     rm -rf "${GWASFM_NXF_WORK}"/[0-9a-f][0-9a-f] 2>/dev/null || true
   fi

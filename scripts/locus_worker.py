@@ -221,6 +221,18 @@ def allocate_locus_workdir(
     )
 
 
+def allocate_explicit_temp_workdir(safe_region: str, explicit_temp_dir: Path) -> WorkdirClaim:
+    """Stage locus work directly inside a caller-specified temp directory (e.g. /scratch)."""
+    explicit_temp_dir.mkdir(parents=True, exist_ok=True)
+    work_dir = Path(tempfile.mkdtemp(prefix=f"gwasfm_{safe_region}_", dir=str(explicit_temp_dir)))
+    (work_dir / ".owner_pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+    return WorkdirClaim(
+        work_dir=work_dir,
+        using_node_tmp=False,
+        cleanup_on_exit=True,
+    )
+
+
 def release_locus_workdir(claim: WorkdirClaim) -> None:
     """Remove transient locus workdir and release any node-local /tmp space reservation."""
     if claim.cleanup_on_exit:
@@ -346,8 +358,12 @@ def run_locus_worker(args: argparse.Namespace) -> int:
         final_loci_root = scratch_base
         final_loc_dir = final_loci_root / reg_id
         final_loc_dir.mkdir(parents=True, exist_ok=True)
-        reserve_b = MHC_LOCUS_RESERVE_BYTES if reg_type == "mhc" else DEFAULT_LOCUS_RESERVE_BYTES
-        claim = allocate_locus_workdir(safe_reg, final_loci_root, reserve_bytes=reserve_b)
+        explicit_temp = (args.temp_dir or "").strip()
+        if explicit_temp:
+            claim = allocate_explicit_temp_workdir(safe_reg, Path(explicit_temp).expanduser())
+        else:
+            reserve_b = MHC_LOCUS_RESERVE_BYTES if reg_type == "mhc" else DEFAULT_LOCUS_RESERVE_BYTES
+            claim = allocate_locus_workdir(safe_reg, final_loci_root, reserve_bytes=reserve_b)
 
     try:
         sub_env = _make_sub_env(claim.work_dir)
@@ -441,6 +457,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--region-id", required=True)
     p.add_argument("--region-type", required=True)
     p.add_argument("--scratch-base", required=True)
+    p.add_argument("--temp-dir", default="")
     p.add_argument("--out-root-file", default=".scratch_loci_root")
     return p.parse_args(argv)
 

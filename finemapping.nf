@@ -85,7 +85,9 @@ process SCREEN_GWAS {
     tuple val(row_id), path(row_json), path('screen_summary.json'), path('loci_list.tsv')
 
     script:
+    def tmp_export = params.temp_dir ? "mkdir -p '${params.temp_dir}' && export TMPDIR='${params.temp_dir}'" : ""
     """
+    ${tmp_export}
     python3 - '${projectDir}/scripts/screen_gwas.py' '${row_json}' <<'PY'
 import csv, json, subprocess, sys
 from pathlib import Path
@@ -154,7 +156,8 @@ process FINEMAP_LOCUS {
 
     script:
     def run_scratch_id = params.log_root ? new File(params.log_root as String).name : workflow.sessionId.toString()
-    def scratch_base = "${params.cache_dir}/scratch/${run_scratch_id}/${row_id}/loci"
+    def scratch_root = params.scratch_dir ?: "${params.cache_dir}/scratch"
+    def scratch_base = "${scratch_root}/${run_scratch_id}/${row_id}/loci"
     """
     python3 '${projectDir}/scripts/locus_worker.py' \\
       --project-dir '${projectDir}' \\
@@ -164,6 +167,7 @@ process FINEMAP_LOCUS {
       --region-id '${region_id}' \\
       --region-type '${region_type}' \\
       --scratch-base '${scratch_base}' \\
+      --temp-dir '${params.temp_dir ?: ""}' \\
       --out-root-file .scratch_loci_root
     SCRATCH_LOCI_ROOT="\$(cat .scratch_loci_root)"
     """
@@ -181,7 +185,9 @@ process FINALISE_GWAS {
     path '*.row_record.json', emit: records
 
     script:
+    def tmp_export = params.temp_dir ? "mkdir -p '${params.temp_dir}' && export TMPDIR='${params.temp_dir}'" : ""
     """
+    ${tmp_export}
     python3 - '${projectDir}/scripts/finalise_gwas.py' '${row_id}' '${row_json}' '${screen_json}' '${scratch_loci_root}' '${params.compress}' <<'PY'
 import json, subprocess, sys
 from pathlib import Path
