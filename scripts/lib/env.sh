@@ -78,6 +78,7 @@ gwasfm_resolve_paths() {
     export GWASFM_SCRATCH_DIR="${GWASFM_SCRATCH_DIR:-${GWASFM_TEMP_ROOT}/scratch}"
     export GWASFM_NXF_WORK="${GWASFM_NXF_WORK:-${GWASFM_TEMP_ROOT}/nextflow-work}"
     export GWASFM_TMP_DIR="${GWASFM_TMP_DIR:-${GWASFM_TEMP_ROOT}/tmp}"
+    export GWASFM_BM_CACHE_DIR="${GWASFM_BM_CACHE_DIR:-${GWASFM_TEMP_ROOT}/bm_cache}"
   else
     export GWASFM_SCRATCH_DIR="${GWASFM_SCRATCH_DIR:-${GWASFM_CACHE_DIR}/scratch}"
     if [[ -z "${GWASFM_NXF_WORK:-}" ]]; then
@@ -99,9 +100,9 @@ gwasfm_activate_runtime() {
   gwasfm_resolve_paths
   export PYTHONNOUSERSITE=1
   export RENV_CONFIG_SYNCHRONIZED_CHECK=FALSE
-  export R_MAX_VSIZE="${R_MAX_VSIZE:-256Gb}"
-  export OPENBLAS_NUM_THREADS="${GWASFM_BLAS_THREADS:-2}"
-  export OMP_NUM_THREADS="${GWASFM_BLAS_THREADS:-2}"
+  export R_MAX_VSIZE="${R_MAX_VSIZE:-512Gb}"
+  export OPENBLAS_NUM_THREADS="${GWASFM_BLAS_THREADS:-4}"
+  export OMP_NUM_THREADS="${GWASFM_BLAS_THREADS:-4}"
 
   if gwasfm_in_container; then
     export GWASFM_IN_CONTAINER=1

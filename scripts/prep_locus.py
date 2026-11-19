@@ -20,14 +20,16 @@ Can be run:
 from __future__ import annotations
 
 import argparse
-from collections import Counter
+from collections import Counter, OrderedDict
 import gc
 import json
 import os
 from pathlib import Path
+import random
 import resource
 import sys
 import tempfile
+import threading
 import time
 from typing import Any
 
@@ -85,6 +87,135 @@ def current_cpu_times() -> tuple[float, float]:
     return round(s.ru_utime + c.ru_utime, 3), round(s.ru_stime + c.ru_stime, 3)
 
 
+def open_blockmatrix_reader(
+    bm_uri: str,
+    block_cache: int = 4,
+    disk_cache_root: str | None = None,
+) -> Any:
+    """Open a Hail BlockMatrix reader with optional atomic local-disk part-* caching."""
+    from ldcov.io.blockmatrix.block_codec import decode_block
+    from ldcov.io.blockmatrix.partitioner import GridPartitioner
+    from ldcov.io.blockmatrix.reader import HailBlockMatrixReader
+    from ldcov.io.fs_utils import resolve_filesystem
+
+    cache_str = (disk_cache_root or "").strip()
+    is_remote = bm_uri.startswith(("s3://", "gs://", "http://", "https://"))
+    if not cache_str or not is_remote:
+        reader = HailBlockMatrixReader(bm_uri, block_cache=block_cache)
+        reader.disk_hits = 0
+        reader.disk_misses = 0
+        return reader
+
+    class DiskCachedHailBlockMatrixReader:
+        def __init__(self, path: str, cache_root: Path, mem_cache_size: int = 4) -> None:
+            self.path = path.rstrip("/")
+            self._fs = None
+            self._fs_lock = threading.Lock()
+            self._cache_size = max(1, mem_cache_size)
+            self._cache: OrderedDict[tuple[int, int], Any] = OrderedDict()
+            self._lock = threading.Lock()
+            self.disk_hits = 0
+            self.disk_misses = 0
+
+            bm_name = self.path.rsplit("/", 1)[-1]
+            self.disk_dir = cache_root / bm_name
+            meta_local = self.disk_dir / "metadata.json"
+            meta = None
+            if meta_local.is_file() and meta_local.stat().st_size > 10:
+                try:
+                    meta = json.loads(meta_local.read_text(encoding="utf-8"))
+                except Exception:
+                    meta = None
+            if meta is None:
+                raw_meta = self._fetch_remote_bytes(self.path + "/metadata.json")
+                meta = json.loads(raw_meta.decode("utf-8"))
+                self._atomic_cache_write(meta_local, raw_meta)
+
+            self.block_size = meta["blockSize"]
+            self.n_rows = meta["nRows"]
+            self.n_cols = meta["nCols"]
+            self._part_files = meta["partFiles"]
+            self.partitioner = GridPartitioner(
+                self.block_size, self.n_rows, self.n_cols, meta.get("maybeFiltered")
+            )
+
+        def _get_fs(self) -> Any:
+            if self._fs is None:
+                with self._fs_lock:
+                    if self._fs is None:
+                        self._fs, _ = resolve_filesystem(self.path, None)
+            return self._fs
+
+        def _fetch_remote_bytes(self, remote_path: str, max_attempts: int = 4) -> bytes:
+            last_exc: Exception | None = None
+            for attempt in range(max_attempts):
+                try:
+                    fs = self._get_fs()
+                    with fs.open(remote_path, "rb") as fh:
+                        return fh.read()
+                except Exception as exc:  # noqa: BLE001
+                    last_exc = exc
+                    if attempt + 1 < max_attempts:
+                        time.sleep(0.5 * (2 ** attempt) + random.uniform(0.0, 0.35))
+                        with self._fs_lock:
+                            self._fs = None
+            assert last_exc is not None
+            raise last_exc
+
+        @staticmethod
+        def _atomic_cache_write(dst: Path, payload: bytes) -> None:
+            try:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                tmp = dst.parent / f".{dst.name}.tmp.{os.getpid()}.{threading.get_ident()}"
+                tmp.write_bytes(payload)
+                os.replace(tmp, dst)
+            except OSError:
+                pass
+
+        def read_block(self, i: int, j: int) -> Any:
+            key = (i, j)
+            with self._lock:
+                if key in self._cache:
+                    self._cache.move_to_end(key)
+                    return self._cache[key]
+
+            slot = self.partitioner.part_slot(i, j)
+            if slot is None:
+                return None
+
+            part_name = self._part_files[slot]
+            local_part = self.disk_dir / "parts" / part_name
+            block = None
+            if local_part.is_file() and local_part.stat().st_size > 0:
+                try:
+                    block = decode_block(local_part.read_bytes())
+                    with self._lock:
+                        self.disk_hits += 1
+                except Exception:  # noqa: BLE001
+                    local_part.unlink(missing_ok=True)
+                    block = None
+
+            if block is None:
+                raw = self._fetch_remote_bytes(self.path + "/parts/" + part_name)
+                block = decode_block(raw)
+                self._atomic_cache_write(local_part, raw)
+                with self._lock:
+                    self.disk_misses += 1
+
+            with self._lock:
+                self._cache[key] = block
+                self._cache.move_to_end(key)
+                if len(self._cache) > self._cache_size:
+                    self._cache.popitem(last=False)
+            return block
+
+    return DiskCachedHailBlockMatrixReader(
+        bm_uri,
+        Path(cache_str).expanduser().resolve(),
+        mem_cache_size=block_cache,
+    )
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     no_cli = (argv is None and len(sys.argv) == 1)
     default_bm = (
@@ -102,8 +233,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--panukb-dir", default=None)
     p.add_argument("--cache-dir", default=str(DEFAULT_CACHE_DIR))
     p.add_argument("--bm-path", default=default_bm, help="Optional BlockMatrix path override (defaults to live S3)")
+    p.add_argument(
+        "--bm-disk-cache",
+        default=os.environ.get("GWASFM_BM_CACHE_DIR", ""),
+        help="Optional persistent disk cache root for remote BlockMatrix part-* files",
+    )
     p.add_argument("--local-ld-panel", default=None, help="Optional offline .npz fixture LD panel")
-    p.add_argument("--fetch-workers", type=int, default=8)
+    p.add_argument("--fetch-workers", type=int, default=4)
     p.add_argument("--block-cache", type=int, default=4)
     p.add_argument("--keep-intermediates", action="store_true")
     return p.parse_args(argv)
@@ -303,6 +439,8 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
     matrix_npy_path = outdir / "matrix.npy"
     lead_idx = max(range(len(matched_rows)), key=lambda idx: (matched_rows[idx]["LP"], -matched_rows[idx]["GWAS_POS"]))
 
+    bm_cache_hits = 0
+    bm_cache_misses = 0
     if local_ld_panel is not None:
         import numpy as np
 
@@ -320,7 +458,6 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
             Path(f"{ld_prefix}.npz").unlink(missing_ok=True)
             Path(f"{ld_prefix}.variants.tsv").unlink(missing_ok=True)
     else:
-        from ldcov.io.blockmatrix.reader import HailBlockMatrixReader
         from ldcov.ld_bm.extract import _apply_flips, _assemble
 
         bm_uri = (
@@ -329,8 +466,14 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
             else f"s3://pan-ukb-us-east-1/ld_release/UKBB.{population}.ldadj.bm"
         )
         global_idxs = [int(r["PANEL_IDX"]) for r in matched_rows]
-        reader = HailBlockMatrixReader(bm_uri, block_cache=args.block_cache)
+        reader = open_blockmatrix_reader(
+            bm_uri,
+            block_cache=args.block_cache,
+            disk_cache_root=args.bm_disk_cache,
+        )
         matrix = _assemble(reader, global_idxs, max_workers=args.fetch_workers)
+        bm_cache_hits = int(getattr(reader, "disk_hits", 0))
+        bm_cache_misses = int(getattr(reader, "disk_misses", 0))
         del reader
         flip_positions = [i for i, r in enumerate(matched_rows) if r["PANEL_ALLELE_SWAPPED"]]
         matrix = _apply_flips(matrix, flip_positions)
@@ -409,6 +552,8 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
         "wall_seconds": wall_seconds,
         "ld_validation": ld_validation,
         "bm_source": "local_override" if args.bm_path else ("local_npz" if local_ld_panel else "live_s3"),
+        "bm_cache_hits": bm_cache_hits,
+        "bm_cache_misses": bm_cache_misses,
         "scratch_matrix_mb": npy_mb,
         "timing": {
             "vcf_query_seconds": vcf_query_seconds,
@@ -425,7 +570,8 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
     write_json(outdir / "locus_prep_qc.json", prep_qc)
     print(
         f"[prep_locus] {region_id}: {len(matched_rows)}/{len(records)} matched | "
-        f"matrix={npy_mb:.1f} MB | ld_extract={ld_extract_seconds:.2f}s, total={wall_seconds:.2f}s, "
+        f"matrix={npy_mb:.1f} MB | bm_cache={bm_cache_hits}h/{bm_cache_misses}m | "
+        f"ld_extract={ld_extract_seconds:.2f}s, total={wall_seconds:.2f}s, "
         f"peak RSS {prep_qc['timing']['peak_rss_mb']:.1f} MB -> {outdir}"
     )
     return prep_qc

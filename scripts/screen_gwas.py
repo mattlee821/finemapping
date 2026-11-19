@@ -221,7 +221,8 @@ def screen_gwas(args: argparse.Namespace) -> dict[str, Any]:
         candidate_regions[: args.max_loci] if args.max_loci > 0 else candidate_regions
     )
     for reg in selected_regions:
-        reg_spec = format_vcf_region(vcf_tags, str(reg["chrom"]), int(reg["start"]), int(reg["end"]))
+        reg_chrom = str(reg.get("CHROM") or reg.get("chrom") or "")
+        reg_spec = format_vcf_region(vcf_tags, reg_chrom, int(reg["start"]), int(reg["end"]))
         v_cnt = count_vcf_region_variants(vcf, reg_spec)
         width_bp = max(1, int(reg["end"]) - int(reg["start"]))
         reg["vcf_variants_in_region"] = v_cnt

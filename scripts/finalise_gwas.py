@@ -174,6 +174,22 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
         loc_entry["wall_seconds"] = round(float(prep_qc.get("wall_seconds", 0.0)) + method_wall_sum, 3)
         analyzed_loci.append(loc_entry)
 
+    failed_loci = [
+        r for r in analyzed_loci
+        if r.get("status") in ("missing_prep_output", "failed_locus")
+        or (
+            r.get("status") == "analyzed"
+            and any(m not in (r.get("methods") or {}) for m in methods)
+        )
+    ]
+    if failed_loci:
+        if args.cleanup_loci_scratch and not args.keep_intermediates and loci_root and loci_root.is_dir():
+            shutil.rmtree(loci_root, ignore_errors=True)
+        bad_desc = ", ".join(
+            f"{r['region_id']} ({r.get('error') or r.get('status')})" for r in failed_loci[:5]
+        )
+        raise RuntimeError(f"GWAS {study_id}/{gwas_id} had {len(failed_loci)} failed locus/loci: {bad_desc}")
+
     # --- Aggregate per-region .rds files into GWAS-level method files ---------
     t_agg0 = time.monotonic()
     r_env = r_runtime_environment(PROJECT_ROOT)

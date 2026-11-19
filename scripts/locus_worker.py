@@ -294,6 +294,7 @@ def _build_prep_cmd(
     loc_idx: str,
     work_loc_dir: Path,
     keep_inter: bool,
+    bm_disk_cache: str = "",
 ) -> list[str]:
     prep_cache = str(row["cache_dir"]) if keep_inter else str(work_loc_dir / "cache")
     cmd = [
@@ -318,6 +319,8 @@ def _build_prep_cmd(
         cmd.extend(["--local-ld-panel", row["local_ld_panel"]])
     if row.get("bm_path"):
         cmd.extend(["--bm-path", row["bm_path"]])
+    if bm_disk_cache:
+        cmd.extend(["--bm-disk-cache", bm_disk_cache])
     if keep_inter:
         cmd.append("--keep-intermediates")
     return cmd
@@ -331,6 +334,29 @@ def _make_sub_env(work_loc_dir: Path) -> dict[str, str]:
     return sub_env
 
 
+def _record_final_locus_failure(
+    final_loc_dir: Path,
+    reg_id: str,
+    reg_type: str,
+    error_msg: str,
+    out_root_file: str,
+    final_loci_root: Path,
+) -> int:
+    final_loc_dir.mkdir(parents=True, exist_ok=True)
+    fail_qc = {
+        "region_id": reg_id,
+        "region_type": reg_type,
+        "status": "failed_locus",
+        "error": error_msg[:1000],
+    }
+    (final_loc_dir / "locus_prep_qc.json").write_text(
+        json.dumps(fail_qc, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    Path(out_root_file).write_text(str(final_loci_root), encoding="utf-8")
+    return 0
+
+
 def run_locus_worker(args: argparse.Namespace) -> int:
     proj = Path(args.project_dir).resolve()
     row = json.loads(Path(args.row_json).read_text(encoding="utf-8"))
@@ -339,6 +365,8 @@ def run_locus_worker(args: argparse.Namespace) -> int:
     reg_id = args.region_id
     reg_type = args.region_type
     scratch_base = Path(args.scratch_base)
+    bm_disk_cache = (args.bm_disk_cache or os.environ.get("GWASFM_BM_CACHE_DIR", "")).strip()
+    is_final_attempt = int(args.attempt) >= int(args.max_attempts)
 
     keep_inter = bool(row.get("keep_intermediates"))
     gwas_log_dir = Path(row["outdir"]) / row["study_id"] / row["gwas_id"] / "logs"
@@ -349,6 +377,7 @@ def run_locus_worker(args: argparse.Namespace) -> int:
         final_loci_root = Path(row["outdir"]) / row["study_id"] / row["gwas_id"] / "loci"
         final_loc_dir = final_loci_root / reg_id
         final_loc_dir.mkdir(parents=True, exist_ok=True)
+        spill_target = final_loci_root
         claim = WorkdirClaim(
             work_dir=final_loc_dir,
             using_node_tmp=False,
@@ -359,33 +388,48 @@ def run_locus_worker(args: argparse.Namespace) -> int:
         final_loc_dir = final_loci_root / reg_id
         final_loc_dir.mkdir(parents=True, exist_ok=True)
         explicit_temp = (args.temp_dir or "").strip()
-        if explicit_temp:
-            claim = allocate_explicit_temp_workdir(safe_reg, Path(explicit_temp).expanduser())
-        else:
-            reserve_b = MHC_LOCUS_RESERVE_BYTES if reg_type == "mhc" else DEFAULT_LOCUS_RESERVE_BYTES
-            claim = allocate_locus_workdir(safe_reg, final_loci_root, reserve_bytes=reserve_b)
+        spill_target = Path(explicit_temp).expanduser() if explicit_temp else final_loci_root
+        reserve_b = MHC_LOCUS_RESERVE_BYTES if reg_type == "mhc" else DEFAULT_LOCUS_RESERVE_BYTES
+        # Stage on compute-node local /tmp first (zero NFS traffic), spilling to spill_target (/scratch)
+        claim = allocate_locus_workdir(safe_reg, spill_target, reserve_bytes=reserve_b)
 
     try:
         sub_env = _make_sub_env(claim.work_dir)
-        prep_cmd = _build_prep_cmd(proj, row, args.screen_json, loc_idx, claim.work_dir, keep_inter)
+        prep_cmd = _build_prep_cmd(proj, row, args.screen_json, loc_idx, claim.work_dir, keep_inter, bm_disk_cache)
         try:
             _run_and_log(prep_cmd, f"02_prep_{safe_reg}", gwas_log_dir, sub_env)
         except StepExecutionError as exc:
             if claim.using_node_tmp and is_enospc_failure(exc.combined_output):
                 sys.stderr.write(
-                    f"[WARN] Node-local temp filled during {reg_id}; spilling locus prep to {final_loci_root}\n"
+                    f"[WARN] Node-local temp filled during {reg_id}; spilling locus prep to {spill_target}\n"
                 )
                 release_locus_workdir(claim)
                 claim = allocate_locus_workdir(
                     safe_reg,
-                    final_loci_root,
+                    spill_target,
                     tmp_candidates=[],
                 )
                 sub_env = _make_sub_env(claim.work_dir)
-                prep_cmd = _build_prep_cmd(proj, row, args.screen_json, loc_idx, claim.work_dir, keep_inter)
-                _run_and_log(prep_cmd, f"02_prep_{safe_reg}", gwas_log_dir, sub_env)
+                prep_cmd = _build_prep_cmd(
+                    proj, row, args.screen_json, loc_idx, claim.work_dir, keep_inter, bm_disk_cache
+                )
+                try:
+                    _run_and_log(prep_cmd, f"02_prep_{safe_reg}", gwas_log_dir, sub_env)
+                except StepExecutionError as exc2:
+                    sys.stderr.write(exc2.combined_output)
+                    if is_final_attempt:
+                        return _record_final_locus_failure(
+                            final_loc_dir, reg_id, reg_type, f"prep_locus failed: {exc2}", args.out_root_file, final_loci_root
+                        )
+                    if exc2.returncode < 0:
+                        return 128 + abs(exc2.returncode)
+                    raise subprocess.CalledProcessError(exc2.returncode, exc2.cmd) from exc2
             else:
                 sys.stderr.write(exc.combined_output)
+                if is_final_attempt:
+                    return _record_final_locus_failure(
+                        final_loc_dir, reg_id, reg_type, f"prep_locus failed: {exc}", args.out_root_file, final_loci_root
+                    )
                 if exc.returncode < 0:
                     sig = abs(exc.returncode)
                     sys.stderr.write(f"[ERROR] Locus prep killed by signal {sig} (likely OOM): {' '.join(exc.cmd)}\n")
@@ -400,55 +444,59 @@ def run_locus_worker(args: argparse.Namespace) -> int:
         if prep_qc.get("status") == "prepared":
             variants_tsv = claim.work_dir / "matched_variants.tsv"
             matrix_npy = claim.work_dir / "matrix.npy"
-            for method_id in row["methods"]:
-                script_path = proj / "scripts" / "methods" / f"run_{method_id}.R"
-                if not script_path.is_file():
-                    raise FileNotFoundError(f"Standalone method script not found: {script_path}")
-                out_m_dir = final_loc_dir / "methods" / method_id
-                out_m_dir.mkdir(parents=True, exist_ok=True)
-                m_cmd = [
-                    "Rscript",
-                    str(script_path),
-                    "--variants",
-                    str(variants_tsv),
-                    "--matrix",
-                    str(matrix_npy),
-                    "--region-id",
-                    reg_id,
-                    "--region-type",
-                    reg_type,
-                    "--out-rds",
-                    str(out_m_dir / "region_result.rds"),
-                    "--qc-json",
-                    str(out_m_dir / "method_qc.json"),
-                    "--allow-skipped-locus",
-                    "true",
-                    "--compress",
-                    "false" if keep_inter else "gzip",
-                ]
-                if method_id != "p_ld":
-                    m_cmd.extend([
-                        "--max-causal",
-                        str(row.get("max_causal", 10)),
-                        "--max-iter",
-                        str(row.get("max_iter", 50)),
-                        "--reference-sample-size",
-                        str(screen["reference_sample_size"]),
-                    ])
-                    if row.get("effective_n") is not None:
-                        m_cmd.extend(["--effective-n", str(row["effective_n"])])
-                    if method_id == "polyfun" and row.get("polyfun_dir"):
-                        m_cmd.extend(["--polyfun-priors", str(row["polyfun_dir"])])
+            batch_runner = proj / "scripts" / "methods" / "run_all_methods.R"
+            if not batch_runner.is_file():
+                raise FileNotFoundError(f"Batch method runner not found: {batch_runner}")
+            m_cmd = [
+                "Rscript",
+                str(batch_runner),
+                "--variants",
+                str(variants_tsv),
+                "--matrix",
+                str(matrix_npy),
+                "--region-id",
+                reg_id,
+                "--region-type",
+                reg_type,
+                "--methods",
+                ",".join(row["methods"]),
+                "--out-methods-dir",
+                str(final_loc_dir / "methods"),
+                "--log-dir",
+                str(gwas_log_dir),
+                "--safe-region",
+                safe_reg,
+                "--max-causal",
+                str(row.get("max_causal", 10)),
+                "--max-iter",
+                str(row.get("max_iter", 50)),
+                "--reference-sample-size",
+                str(screen["reference_sample_size"]),
+                "--allow-skipped-locus",
+                "true",
+                "--compress",
+                "false" if keep_inter else "gzip",
+                "--unlink-matrix",
+                "false" if keep_inter else "true",
+            ]
+            if row.get("effective_n") is not None:
+                m_cmd.extend(["--effective-n", str(row["effective_n"])])
+            if row.get("polyfun_dir"):
+                m_cmd.extend(["--polyfun-priors", str(row["polyfun_dir"])])
 
-                try:
-                    _run_and_log(m_cmd, f"03_method_{safe_reg}_{method_id}", gwas_log_dir, sub_env)
-                except StepExecutionError as exc:
-                    sys.stderr.write(exc.combined_output)
-                    if exc.returncode < 0:
-                        sig = abs(exc.returncode)
-                        sys.stderr.write(f"[ERROR] Method {method_id} killed by signal {sig} (likely OOM)\n")
-                        return 128 + sig
-                    raise subprocess.CalledProcessError(exc.returncode, exc.cmd) from exc
+            try:
+                _run_and_log(m_cmd, f"03_methods_batch_{safe_reg}", gwas_log_dir, sub_env)
+            except StepExecutionError as exc:
+                sys.stderr.write(exc.combined_output)
+                if is_final_attempt:
+                    return _record_final_locus_failure(
+                        final_loc_dir, reg_id, reg_type, f"methods failed: {exc}", args.out_root_file, final_loci_root
+                    )
+                if exc.returncode < 0:
+                    sig = abs(exc.returncode)
+                    sys.stderr.write(f"[ERROR] Methods runner killed by signal {sig} (likely OOM)\n")
+                    return 128 + sig
+                raise subprocess.CalledProcessError(exc.returncode, exc.cmd) from exc
     finally:
         release_locus_workdir(claim)
 
@@ -466,6 +514,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--region-type", required=True)
     p.add_argument("--scratch-base", required=True)
     p.add_argument("--temp-dir", default="")
+    p.add_argument("--bm-disk-cache", default="")
+    p.add_argument("--attempt", type=int, default=1)
+    p.add_argument("--max-attempts", type=int, default=1)
     p.add_argument("--out-root-file", default=".scratch_loci_root")
     return p.parse_args(argv)
 

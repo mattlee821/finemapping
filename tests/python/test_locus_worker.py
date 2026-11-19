@@ -162,6 +162,88 @@ class LocusWorkerScratchTests(unittest.TestCase):
             locus_worker.release_locus_workdir(claim)
             self.assertFalse(claim.work_dir.exists())
 
+    def test_final_attempt_failure_records_failed_locus_qc_for_isolation(self) -> None:
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "loci"
+            loc_dir = root / "chr6_25500000_34000000_mhc"
+            out_file = Path(td) / ".scratch_loci_root"
+            rc = locus_worker._record_final_locus_failure(
+                loc_dir,
+                "chr6_25500000_34000000_mhc",
+                "mhc",
+                "prep_locus failed: simulated OOM",
+                str(out_file),
+                root,
+            )
+            self.assertEqual(rc, 0)
+            qc = json.loads((loc_dir / "locus_prep_qc.json").read_text(encoding="utf-8"))
+            self.assertEqual(qc["status"], "failed_locus")
+            self.assertIn("simulated OOM", qc["error"])
+            self.assertEqual(out_file.read_text(encoding="utf-8"), str(root))
+
+    def test_disk_cached_blockmatrix_reader_caches_metadata_and_parts_atomically(self) -> None:
+        import io
+        import json
+        import tempfile
+        import prep_locus
+        import numpy as np
+
+        raw_block = np.eye(4, dtype=np.float64).tobytes()
+        meta_bytes = json.dumps({
+            "blockSize": 4,
+            "nRows": 4,
+            "nCols": 4,
+            "maybeFiltered": [0],
+            "partFiles": ["part-0-test"],
+        }).encode("utf-8")
+
+        fetch_counts = {"meta": 0, "part": 0}
+
+        class FakeFS:
+            def open(self, path: str, mode: str = "rb"):
+                if path.endswith("/metadata.json"):
+                    fetch_counts["meta"] += 1
+                    return io.BytesIO(meta_bytes)
+                if path.endswith("/parts/part-0-test"):
+                    fetch_counts["part"] += 1
+                    return io.BytesIO(raw_block)
+                raise FileNotFoundError(path)
+
+        with tempfile.TemporaryDirectory() as td:
+            cache_dir = Path(td) / "bm_cache"
+            with (
+                mock.patch("ldcov.io.fs_utils.resolve_filesystem", return_value=(FakeFS(), "")),
+                mock.patch(
+                    "ldcov.io.blockmatrix.block_codec.decode_block",
+                    side_effect=lambda b: np.frombuffer(b, dtype=np.float64).reshape(4, 4).copy(),
+                ),
+            ):
+                r1 = prep_locus.open_blockmatrix_reader(
+                    "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm",
+                    block_cache=2,
+                    disk_cache_root=str(cache_dir),
+                )
+                b1 = r1.read_block(0, 0)
+                self.assertEqual(r1.disk_misses, 1)
+                self.assertEqual(r1.disk_hits, 0)
+                self.assertEqual(fetch_counts, {"meta": 1, "part": 1})
+                np.testing.assert_allclose(b1, np.eye(4))
+
+                # Second reader hits local disk cache with zero remote FS calls!
+                r2 = prep_locus.open_blockmatrix_reader(
+                    "s3://pan-ukb-us-east-1/ld_release/UKBB.EUR.ldadj.bm",
+                    block_cache=2,
+                    disk_cache_root=str(cache_dir),
+                )
+                b2 = r2.read_block(0, 0)
+                self.assertEqual(r2.disk_hits, 1)
+                self.assertEqual(r2.disk_misses, 0)
+                self.assertEqual(fetch_counts, {"meta": 1, "part": 1})
+                np.testing.assert_allclose(b2, np.eye(4))
+
 
 if __name__ == "__main__":
     unittest.main()

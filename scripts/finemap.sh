@@ -232,17 +232,19 @@ if [[ -n "$TEMP_ROOT" ]]; then
   SCRATCH_ROOT="${TEMP_ROOT}/scratch"
   LOG_ROOT="${TEMP_ROOT}/logs/runs/${RUN_ID}"
   RUN_TMP_DIR="${TEMP_ROOT}/tmp/${RUN_ID}"
+  BM_CACHE_DIR="${GWASFM_BM_CACHE_DIR:-${TEMP_ROOT}/bm_cache}"
   if [[ -n "$TEMP_DIR_OPT" ]]; then
     export GWASFM_NXF_WORK="${TEMP_ROOT}/nextflow-work"
   fi
   export TMPDIR="${RUN_TMP_DIR}"
   export NXF_TEMP="${RUN_TMP_DIR}"
   export NXF_CACHE_DIR="${GWASFM_NXF_WORK}/nxf-cache"
-  mkdir -p "$OUTDIR" "$LOG_ROOT" "${GWASFM_NXF_WORK}" "${NXF_CACHE_DIR}" "${SCRATCH_ROOT}" "${RUN_TMP_DIR}"
+  mkdir -p "$OUTDIR" "$LOG_ROOT" "${GWASFM_NXF_WORK}" "${NXF_CACHE_DIR}" "${SCRATCH_ROOT}" "${RUN_TMP_DIR}" "${BM_CACHE_DIR}"
 else
   SCRATCH_ROOT="${GWASFM_SCRATCH_DIR:-${GWASFM_CACHE_DIR}/scratch}"
   LOG_ROOT="${GWASFM_CACHE_DIR}/logs/runs/${RUN_ID}"
   RUN_TMP_DIR="${GWASFM_TMP_DIR:-}"
+  BM_CACHE_DIR="${GWASFM_BM_CACHE_DIR:-}"
   export NXF_CACHE_DIR="${GWASFM_NXF_WORK}/nxf-cache"
   mkdir -p "$OUTDIR" "$LOG_ROOT" "${GWASFM_NXF_WORK}" "${NXF_CACHE_DIR}"
 fi
@@ -362,6 +364,7 @@ NF_CMD=(
 [[ -n "$LOCAL_LD_PANEL" ]] && NF_CMD+=(--local_ld_panel "$LOCAL_LD_PANEL")
 [[ -n "$BM_PATH" ]] && NF_CMD+=(--bm_path "$BM_PATH")
 [[ -n "$RUN_TMP_DIR" ]] && NF_CMD+=(--temp_dir "$RUN_TMP_DIR")
+[[ -n "$BM_CACHE_DIR" ]] && NF_CMD+=(--bm_cache_dir "$BM_CACHE_DIR")
 [[ "$RESUME" -eq 1 ]] && NF_CMD+=(-resume)
 
 nf_status=0

@@ -842,7 +842,7 @@ def run_checked(command: list[str], env: dict[str, str] | None = None,
 def r_runtime_environment(project_root: Path) -> dict[str, str]:
     environment = os.environ.copy()
     environment.setdefault("RENV_CONFIG_SYNCHRONIZED_CHECK", "FALSE")
-    environment.setdefault("R_MAX_VSIZE", "64Gb")
+    environment.setdefault("R_MAX_VSIZE", "512Gb")
     if environment.get("GWASFM_IN_CONTAINER") == "1":
         return environment
     tools_root = Path(

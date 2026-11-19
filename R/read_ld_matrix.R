@@ -65,14 +65,17 @@ read_npy_float64_matrix <- function(npy_path, ids = NULL, prevalidated = FALSE,
   n_total <- as.numeric(dims[[1L]]) * as.numeric(dims[[2L]])
   has_c_fast <- is.loaded("gwasfm_frob_and_scale_inplace",
                           PACKAGE = "gwasfinemapping")
+  # Base R readBin() coerces `n` to 32-bit integer (max 2^31 - 1 = 2,147,483,647,
+  # exceeded at M >= 46,341 variants such as dense MHC). Chunk above 2^30 doubles.
+  max_single_read <- 1073741824
 
   if (scale != 1 && !has_c_fast) {
     values <- numeric(n_total)
     frob_sq <- 0
-    chunk_n <- 16777216
+    chunk_n <- 16777216L
     pos <- 1
     while (pos <= n_total) {
-      take <- min(chunk_n, n_total - pos + 1)
+      take <- as.integer(min(chunk_n, n_total - pos + 1))
       ch <- readBin(con, what = "numeric", n = take, size = 8L,
                     endian = "little")
       if (length(ch) != take) {
@@ -84,11 +87,32 @@ read_npy_float64_matrix <- function(npy_path, ids = NULL, prevalidated = FALSE,
       pos <- pos + take
     }
     rm(ch)
+  } else if (n_total > max_single_read) {
+    values <- numeric(n_total)
+    chunk_n <- 67108864L
+    pos <- 1
+    while (pos <= n_total) {
+      take <- as.integer(min(chunk_n, n_total - pos + 1))
+      ch <- readBin(con, what = "numeric", n = take, size = 8L,
+                    endian = "little")
+      if (length(ch) != take) {
+        stop("Truncated .npy matrix payload: ", npy_path, call. = FALSE)
+      }
+      values[seq.int(pos, length.out = take)] <- ch
+      pos <- pos + take
+    }
+    rm(ch)
+    frob_sq <- if (scale != 1 && has_c_fast) {
+      .Call("gwasfm_frob_and_scale_inplace", values, scale,
+            PACKAGE = "gwasfinemapping")
+    } else {
+      NULL
+    }
   } else {
     values <- readBin(
       con,
       what = "numeric",
-      n = n_total,
+      n = as.integer(n_total),
       size = 8L,
       endian = "little"
     )
@@ -181,5 +205,48 @@ read_ld_matrix <- function(matrix_path, ids_path = NULL, scale = 1) {
   }
   rownames(R) <- ids
   colnames(R) <- names(matrix_frame)[-1L]
+  R
+}
+
+scale_ld_matrix_inplace <- function(R, scale) {
+  scale <- as.numeric(scale)
+  if (length(scale) != 1L || is.na(scale) || !is.finite(scale) || scale <= 0) {
+    stop("`scale` must be one positive finite number.", call. = FALSE)
+  }
+  prev_scale <- attr(R, "ld_scale")
+  if (!is.null(prev_scale) && is.finite(prev_scale) && abs(prev_scale - scale) < 1e-12) {
+    return(R)
+  }
+  eff_mult <- if (!is.null(prev_scale) && is.finite(prev_scale) && prev_scale > 0) {
+    scale / prev_scale
+  } else {
+    scale
+  }
+  has_c_fast <- is.loaded("gwasfm_frob_and_scale_inplace", PACKAGE = "gwasfinemapping")
+  if (has_c_fast) {
+    raw_frob <- .Call("gwasfm_frob_and_scale_inplace", R, eff_mult,
+                      PACKAGE = "gwasfinemapping")
+    frob_unscaled <- if (!is.null(prev_scale) && is.finite(prev_scale) && prev_scale > 0) {
+      raw_frob / (prev_scale * prev_scale)
+    } else {
+      raw_frob
+    }
+  } else {
+    denom <- if (!is.null(prev_scale) && is.finite(prev_scale) && prev_scale > 0) {
+      prev_scale * prev_scale
+    } else {
+      1
+    }
+    frob_unscaled <- sum(R * R) / denom
+    R <- R * eff_mult
+  }
+  p <- nrow(R)
+  ids <- colnames(R)
+  d_vec <- rep(scale, p)
+  if (!is.null(ids)) names(d_vec) <- ids
+  attr(R, "ld_scale") <- scale
+  attr(R, "frob_sq") <- frob_unscaled
+  attr(R, "d") <- d_vec
+  attr(R, "scaled:scale") <- rep(1, p)
   R
 }

@@ -174,6 +174,9 @@ process FINEMAP_LOCUS {
       --region-type '${region_type}' \\
       --scratch-base '${scratch_base}' \\
       --temp-dir '${params.temp_dir ?: ""}' \\
+      --bm-disk-cache '${params.bm_cache_dir ?: ""}' \\
+      --attempt '${task.attempt}' \\
+      --max-attempts '${(task.maxRetries ?: 0) + 1}' \\
       --out-root-file .scratch_loci_root
     SCRATCH_LOCI_ROOT="\$(cat .scratch_loci_root)"
     """
