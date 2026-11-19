@@ -156,137 +156,15 @@ process FINEMAP_LOCUS {
     def run_scratch_id = params.log_root ? new File(params.log_root as String).name : workflow.sessionId.toString()
     def scratch_base = "${params.cache_dir}/scratch/${run_scratch_id}/${row_id}/loci"
     """
-    python3 - '${projectDir}' '${row_json}' '${screen_json}' '${locus_index}' '${region_id}' '${region_type}' '${scratch_base}' <<'PY'
-import json, os, re, shutil, subprocess, sys, tempfile
-from pathlib import Path
-
-proj = Path(sys.argv[1])
-row = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-screen = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
-loc_idx, reg_id, reg_type, scratch_base = sys.argv[4:8]
-
-keep_inter = bool(row.get("keep_intermediates"))
-gwas_log_dir = Path(row["outdir"]) / row["study_id"] / row["gwas_id"] / "logs"
-gwas_log_dir.mkdir(parents=True, exist_ok=True)
-safe_reg = re.sub(r"[^A-Za-z0-9._-]+", "_", reg_id)
-
-if keep_inter:
-    final_loci_root = Path(row["outdir"]) / row["study_id"] / row["gwas_id"] / "loci"
-    final_loc_dir = final_loci_root / reg_id
-    final_loc_dir.mkdir(parents=True, exist_ok=True)
-    work_loc_dir = final_loc_dir
-    cleanup_work = False
-else:
-    final_loci_root = Path(scratch_base)
-    final_loc_dir = final_loci_root / reg_id
-    final_loc_dir.mkdir(parents=True, exist_ok=True)
-    home_res = str(Path.home().resolve())
-    cands = []
-    for raw_c in (os.environ.get("SLURM_TMPDIR"), "/tmp", os.environ.get("TMPDIR")):
-        if raw_c and Path(raw_c).is_dir() and os.access(raw_c, os.W_OK | os.X_OK):
-            cands.append(raw_c)
-    non_home = [
-        c for c in cands
-        if str(Path(c).resolve()) != home_res and not str(Path(c).resolve()).startswith(home_res + "/")
-    ]
-    tmp_root = None
-    for cand in [*non_home, *cands]:
-        try:
-            if shutil.disk_usage(cand).free >= 8 * (1024 ** 3):
-                tmp_root = cand
-                break
-        except OSError:
-            pass
-    if tmp_root is None:
-        tmp_root = str(final_loci_root)
-    work_loc_dir = Path(tempfile.mkdtemp(prefix=f"gwasfm_{safe_reg}_", dir=tmp_root))
-    cleanup_work = True
-
-work_tmp_dir = work_loc_dir / "tmp"
-work_tmp_dir.mkdir(parents=True, exist_ok=True)
-sub_env = dict(os.environ)
-sub_env["TMPDIR"] = str(work_tmp_dir)
-
-def run_and_log(cmd: list[str], step_stem: str) -> None:
-    res = subprocess.run(cmd, text=True, capture_output=True, env=sub_env)
-    out_txt = (res.stdout or "")
-    err_txt = (res.stderr or "")
-    combined = out_txt + (("\\n" + err_txt) if err_txt and res.returncode != 0 else "")
-    log_path = gwas_log_dir / f"{step_stem}.log"
-    try:
-        log_path.write_text(combined if combined.strip() else f"[completed] {step_stem}\\n", encoding="utf-8")
-        if err_txt.strip():
-            (gwas_log_dir / f"{step_stem}.err").write_text(err_txt, encoding="utf-8")
-    except OSError as exc:
-        sys.stderr.write(f"[WARN] Could not write step log {log_path}: {exc}\\n")
-    if res.returncode != 0:
-        sys.stderr.write(combined)
-        raise subprocess.CalledProcessError(res.returncode, cmd)
-
-try:
-    prep_cache = str(row["cache_dir"]) if keep_inter else str(work_loc_dir / "cache")
-    prep_cmd = [
-        sys.executable, str(proj / "scripts" / "prep_locus.py"),
-        "--screen-json", sys.argv[3],
-        "--locus-index", str(loc_idx),
-        "--outdir", str(work_loc_dir),
-        "--chain", row["chain"],
-        "--grch37-fasta", row["grch37_fasta"],
-        "--cache-dir", prep_cache,
-    ]
-    if row.get("panukb_dir"):
-        prep_cmd.extend(["--panukb-dir", row["panukb_dir"]])
-    if row.get("local_ld_panel"):
-        prep_cmd.extend(["--local-ld-panel", row["local_ld_panel"]])
-    if row.get("bm_path"):
-        prep_cmd.extend(["--bm-path", row["bm_path"]])
-    if keep_inter:
-        prep_cmd.append("--keep-intermediates")
-
-    run_and_log(prep_cmd, f"02_prep_{safe_reg}")
-
-    prep_qc_src = work_loc_dir / "locus_prep_qc.json"
-    if prep_qc_src.is_file() and work_loc_dir != final_loc_dir:
-        shutil.copy2(prep_qc_src, final_loc_dir / "locus_prep_qc.json")
-
-    prep_qc = json.loads(prep_qc_src.read_text(encoding="utf-8")) if prep_qc_src.is_file() else {}
-    if prep_qc.get("status") == "prepared":
-        variants_tsv = work_loc_dir / "matched_variants.tsv"
-        matrix_npy = work_loc_dir / "matrix.npy"
-        for method_id in row["methods"]:
-            script_path = proj / "scripts" / "methods" / f"run_{method_id}.R"
-            if not script_path.is_file():
-                raise FileNotFoundError(f"Standalone method script not found: {script_path}")
-            out_m_dir = final_loc_dir / "methods" / method_id
-            out_m_dir.mkdir(parents=True, exist_ok=True)
-            m_cmd = [
-                "Rscript", str(script_path),
-                "--variants", str(variants_tsv),
-                "--matrix", str(matrix_npy),
-                "--region-id", reg_id,
-                "--region-type", reg_type,
-                "--out-rds", str(out_m_dir / "region_result.rds"),
-                "--qc-json", str(out_m_dir / "method_qc.json"),
-                "--allow-skipped-locus", "true",
-            ]
-            if method_id != "p_ld":
-                m_cmd.extend([
-                    "--max-causal", str(row.get("max_causal", 10)),
-                    "--max-iter", str(row.get("max_iter", 50)),
-                    "--reference-sample-size", str(screen["reference_sample_size"]),
-                ])
-                if row.get("effective_n") is not None:
-                    m_cmd.extend(["--effective-n", str(row["effective_n"])])
-                if method_id == "polyfun" and row.get("polyfun_dir"):
-                    m_cmd.extend(["--polyfun-priors", str(row["polyfun_dir"])])
-
-            run_and_log(m_cmd, f"03_method_{safe_reg}_{method_id}")
-finally:
-    if cleanup_work:
-        shutil.rmtree(work_loc_dir, ignore_errors=True)
-
-Path(".scratch_loci_root").write_text(str(final_loci_root), encoding="utf-8")
-PY
+    python3 '${projectDir}/scripts/locus_worker.py' \\
+      --project-dir '${projectDir}' \\
+      --row-json '${row_json}' \\
+      --screen-json '${screen_json}' \\
+      --locus-index '${locus_index}' \\
+      --region-id '${region_id}' \\
+      --region-type '${region_type}' \\
+      --scratch-base '${scratch_base}' \\
+      --out-root-file .scratch_loci_root
     SCRATCH_LOCI_ROOT="\$(cat .scratch_loci_root)"
     """
 }
