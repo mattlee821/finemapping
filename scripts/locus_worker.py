@@ -386,6 +386,10 @@ def run_locus_worker(args: argparse.Namespace) -> int:
                 _run_and_log(prep_cmd, f"02_prep_{safe_reg}", gwas_log_dir, sub_env)
             else:
                 sys.stderr.write(exc.combined_output)
+                if exc.returncode < 0:
+                    sig = abs(exc.returncode)
+                    sys.stderr.write(f"[ERROR] Locus prep killed by signal {sig} (likely OOM): {' '.join(exc.cmd)}\n")
+                    return 128 + sig
                 raise subprocess.CalledProcessError(exc.returncode, exc.cmd) from exc
 
         prep_qc_src = claim.work_dir / "locus_prep_qc.json"
@@ -440,6 +444,10 @@ def run_locus_worker(args: argparse.Namespace) -> int:
                     _run_and_log(m_cmd, f"03_method_{safe_reg}_{method_id}", gwas_log_dir, sub_env)
                 except StepExecutionError as exc:
                     sys.stderr.write(exc.combined_output)
+                    if exc.returncode < 0:
+                        sig = abs(exc.returncode)
+                        sys.stderr.write(f"[ERROR] Method {method_id} killed by signal {sig} (likely OOM)\n")
+                        return 128 + sig
                     raise subprocess.CalledProcessError(exc.returncode, exc.cmd) from exc
     finally:
         release_locus_workdir(claim)

@@ -14,9 +14,23 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import locus_worker  # noqa: E402
+import screen_gwas  # noqa: E402
 
 
 class LocusWorkerScratchTests(unittest.TestCase):
+    def test_automatic_locus_memory_scaling_by_variants_and_width(self) -> None:
+        # Sparse HapMap 3 Mb locus (e.g. Locke BMI ~3.4k variants) -> 16 GB
+        self.assertEqual(screen_gwas.estimate_locus_memory_gb(3_400, 3_000_000, "lead_locus"), 16)
+        # Standard UKB-PPP 3 Mb locus (~20k variants) -> 16 GB
+        self.assertEqual(screen_gwas.estimate_locus_memory_gb(20_000, 3_000_000, "lead_locus"), 16)
+        # Dense UKB-PPP 3 Mb locus (~24k variants) -> 24 GB
+        self.assertEqual(screen_gwas.estimate_locus_memory_gb(24_000, 3_000_000, "lead_locus"), 24)
+        # Wide 9.33 Mb merged UKB-PPP locus (~65k variants, ~31.5 GiB matrix) -> 128 GB
+        self.assertEqual(screen_gwas.estimate_locus_memory_gb(65_000, 9_333_934, "lead_locus"), 128)
+        # Extended 8.50 Mb UKB-PPP MHC locus (~80k variants, ~47.7 GiB matrix) -> 160 GB
+        self.assertEqual(screen_gwas.estimate_locus_memory_gb(80_000, 8_500_000, "mhc"), 160)
+        # Sparse HapMap MHC locus (~10k variants) stays small -> 16 GB
+        self.assertEqual(screen_gwas.estimate_locus_memory_gb(10_000, 8_500_000, "mhc"), 16)
     def test_concurrent_reservations_spill_cleanly_and_reclaim_on_release(self) -> None:
         import tempfile
 

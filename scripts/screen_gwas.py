@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 import resource
+import subprocess
 import sys
 import time
 from typing import Any
@@ -31,6 +32,7 @@ from run_finemapping import (  # noqa: E402
     REFERENCE_SAMPLES,
     build_analysis_regions,
     chromosome_sort_key,
+    format_vcf_region,
     inspect_vcf_tags,
     load_or_init_sidecars,
     query_vcf,
@@ -38,6 +40,53 @@ from run_finemapping import (  # noqa: E402
     resolve_target_gene,
     write_json,
 )
+
+MEM_TIERS_GB = (16, 24, 32, 48, 64, 96, 128, 160, 224, 320, 350)
+
+
+def count_vcf_region_variants(vcf: Path, region_spec: str) -> int:
+    """Fast tabix-sliced variant count for a candidate locus without genotype formatting."""
+    res = subprocess.run(
+        [
+            "bcftools",
+            "view",
+            "--no-header",
+            "--drop-genotypes",
+            "--regions",
+            region_spec,
+            str(vcf),
+        ],
+        capture_output=True,
+    )
+    if res.returncode != 0:
+        return 0
+    return res.stdout.count(b"\n")
+
+
+def estimate_locus_memory_gb(
+    variant_count: int,
+    width_bp: int,
+    region_type: str = "lead_locus",
+) -> int:
+    """Estimate SLURM memory (GiB) from quadratic O(M^2) float64 LD matrix footprint."""
+    est_m = int(variant_count)
+    if est_m <= 0:
+        density_per_mb = 10_000.0 if region_type == "mhc" else 7_500.0
+        est_m = max(1_000, int((max(1, int(width_bp)) / 1_000_000.0) * density_per_mb))
+
+    matrix_gib = (est_m * est_m * 8.0) / (1024.0 ** 3)
+    # 3.2x covers BlockMatrix block assembly + susie_rrss R workspace + 6 GiB runtime overhead
+    raw_gib = 3.2 * matrix_gib + 6.0
+
+    if region_type == "mhc" and est_m >= 35_000:
+        raw_gib = max(raw_gib, 96.0)
+    elif int(width_bp) >= 7_000_000 and est_m >= 35_000:
+        raw_gib = max(raw_gib, 64.0)
+
+    for tier in MEM_TIERS_GB:
+        if raw_gib <= tier:
+            return tier
+    return MEM_TIERS_GB[-1]
 
 # ==============================================================================
 # 1. Interactive defaults (used when run with no CLI flags)
@@ -171,6 +220,16 @@ def screen_gwas(args: argparse.Namespace) -> dict[str, Any]:
     selected_regions = (
         candidate_regions[: args.max_loci] if args.max_loci > 0 else candidate_regions
     )
+    for reg in selected_regions:
+        reg_spec = format_vcf_region(vcf_tags, str(reg["chrom"]), int(reg["start"]), int(reg["end"]))
+        v_cnt = count_vcf_region_variants(vcf, reg_spec)
+        width_bp = max(1, int(reg["end"]) - int(reg["start"]))
+        reg["vcf_variants_in_region"] = v_cnt
+        reg["recommended_mem_gb"] = estimate_locus_memory_gb(
+            v_cnt,
+            width_bp,
+            str(reg.get("region_type", "lead_locus")),
+        )
     min_sig_ss = min((r["SS"] for r in significant if r.get("SS") is not None), default=None)
 
     u1, s1 = current_cpu_times()

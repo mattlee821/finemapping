@@ -135,9 +135,9 @@ subprocess.run(cmd, check=True)
 summary = json.loads(Path("screen_summary.json").read_text(encoding="utf-8"))
 with open("loci_list.tsv", "w", encoding="utf-8", newline="") as fh:
     w = csv.writer(fh, delimiter="\\t")
-    w.writerow(["locus_index", "region_id", "region_type"])
+    w.writerow(["locus_index", "region_id", "region_type", "mem_gb"])
     for idx, reg in enumerate(summary.get("selected_regions") or []):
-        w.writerow([idx, reg["region_id"], reg["region_type"]])
+        w.writerow([idx, reg["region_id"], reg["region_type"], reg.get("recommended_mem_gb", 16)])
 PY
     """
 }
@@ -146,10 +146,16 @@ process FINEMAP_LOCUS {
     tag "${row_id}:${region_id}"
     label 'method_heavy'
     cache false
+    memory {
+        def base = (mem_gb ?: 16) as Integer
+        def mult = task.attempt == 1 ? 1.0 : (task.attempt == 2 ? 1.75 : 2.5)
+        def req = Math.min(350, Math.max(base, Math.ceil(base * mult) as Integer))
+        "${req} GB"
+    }
     afterScript { "if [ -s .command.err ]; then python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' --step-name '02_locus_worker_${region_id}' || true; fi" }
 
     input:
-    tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(locus_index), val(region_id), val(region_type)
+    tuple val(row_id), path(row_json), path(screen_json), val(n_loci), val(locus_index), val(region_id), val(region_type), val(mem_gb)
 
     output:
     tuple val(row_id), path(row_json), path(screen_json), val(n_loci), env('SCRATCH_LOCI_ROOT')
@@ -297,7 +303,8 @@ workflow {
         def n_loci = lines.size()
         lines.collect { line ->
             def cols = line.split('\\t')
-            tuple(row_id, row_json, screen_json, n_loci, cols[0] as Integer, cols[1], cols[2])
+            def mem_gb = cols.size() > 3 ? (cols[3] as Integer) : 16
+            tuple(row_id, row_json, screen_json, n_loci, cols[0] as Integer, cols[1], cols[2], mem_gb)
         }
     }
 

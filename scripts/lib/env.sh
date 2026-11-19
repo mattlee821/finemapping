@@ -99,7 +99,7 @@ gwasfm_activate_runtime() {
   gwasfm_resolve_paths
   export PYTHONNOUSERSITE=1
   export RENV_CONFIG_SYNCHRONIZED_CHECK=FALSE
-  export R_MAX_VSIZE="${R_MAX_VSIZE:-64Gb}"
+  export R_MAX_VSIZE="${R_MAX_VSIZE:-256Gb}"
   export OPENBLAS_NUM_THREADS="${GWASFM_BLAS_THREADS:-2}"
   export OMP_NUM_THREADS="${GWASFM_BLAS_THREADS:-2}"
 
