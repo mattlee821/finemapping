@@ -96,47 +96,59 @@ class LocusWorkerScratchTests(unittest.TestCase):
                 locus_worker.release_locus_workdir(c3)
                 locus_worker.release_locus_workdir(c4)
 
-    def test_sweeps_dead_pid_and_legacy_orphan_directories(self) -> None:
+    def test_sweeps_dead_pid_and_legacy_orphan_directories_while_preserving_other_hosts(self) -> None:
+        import socket
         import tempfile
 
         with tempfile.TemporaryDirectory() as td:
             node_tmp = Path(td)
+            my_host = socket.gethostname()
+
             dead_dir = node_tmp / "gwasfm_chr2_dead_abc"
             dead_dir.mkdir()
-            (dead_dir / ".owner_pid").write_text("99999999\n", encoding="utf-8")
+            (dead_dir / ".owner_pid").write_text(f"{my_host}:99999999\n", encoding="utf-8")
+
+            other_host_dir = node_tmp / "gwasfm_chr2_remote_node"
+            other_host_dir.mkdir()
+            (other_host_dir / ".owner_pid").write_text("cn99_other_host:99999999\n", encoding="utf-8")
 
             legacy_dir = node_tmp / "gwasfm_chr3_legacy_xyz"
             legacy_dir.mkdir()
-            old_ts = time.time() - 600.0
+            old_ts = time.time() - 7200.0
             os.utime(legacy_dir, (old_ts, old_ts))
 
             live_dir = node_tmp / "gwasfm_chr4_live_def"
             live_dir.mkdir()
-            (live_dir / ".owner_pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+            (live_dir / ".owner_pid").write_text(f"{my_host}:{os.getpid()}\n", encoding="utf-8")
 
             removed = locus_worker._sweep_stale_tmp_dirs(node_tmp, os.getuid())
             self.assertEqual(removed, 2)
             self.assertFalse(dead_dir.exists())
             self.assertFalse(legacy_dir.exists())
+            self.assertTrue(other_host_dir.exists())
             self.assertTrue(live_dir.exists())
 
-    def test_home_directory_excluded_from_node_tmp_candidates(self) -> None:
+    def test_home_and_shared_tmpdir_excluded_from_node_tmp_candidates(self) -> None:
         import tempfile
 
         with tempfile.TemporaryDirectory() as td:
             fake_home = Path(td) / "home_leem"
             home_tmp = fake_home / "tmp"
-            real_tmp = Path(td) / "local_tmp"
+            shared_spill = Path(td) / "shared_scratch_tmp"
+            slurm_local = Path(td) / "slurm_local_tmp"
             home_tmp.mkdir(parents=True)
-            real_tmp.mkdir(parents=True)
+            shared_spill.mkdir(parents=True)
+            slurm_local.mkdir(parents=True)
 
             roots = locus_worker.candidate_node_tmp_roots(
-                environ={"SLURM_TMPDIR": str(home_tmp), "TMPDIR": str(real_tmp)},
+                environ={"SLURM_TMPDIR": str(slurm_local), "TMPDIR": str(shared_spill)},
                 home_dir=fake_home,
+                exclude_roots=[shared_spill],
             )
             resolved_strs = [str(p) for p in roots]
             self.assertNotIn(str(home_tmp.resolve()), resolved_strs)
-            self.assertIn(str(real_tmp.resolve()), resolved_strs)
+            self.assertNotIn(str(shared_spill.resolve()), resolved_strs)
+            self.assertIn(str(slurm_local.resolve()), resolved_strs)
 
     def test_enospc_detection(self) -> None:
         self.assertTrue(

@@ -19,6 +19,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -80,8 +81,9 @@ def _dir_size_bytes(path: Path) -> int:
 
 
 def _sweep_stale_tmp_dirs(tmp_root: Path, uid: int, now: float | None = None) -> int:
-    """Delete orphaned gwasfm_* directories owned by `uid` whose creator PID exited."""
+    """Delete orphaned gwasfm_* directories on THIS host owned by `uid` whose creator PID exited."""
     now_ts = time.time() if now is None else now
+    my_host = socket.gethostname()
     removed = 0
     try:
         entries = list(tmp_root.glob("gwasfm_*"))
@@ -99,13 +101,20 @@ def _sweep_stale_tmp_dirs(tmp_root: Path, uid: int, now: float | None = None) ->
         stale = False
         if pid_file.is_file():
             try:
-                owner_pid = int(pid_file.read_text(encoding="utf-8").strip())
-                stale = not _pid_is_alive(owner_pid)
+                raw_owner = pid_file.read_text(encoding="utf-8").strip()
+                if ":" in raw_owner:
+                    owner_host, pid_str = raw_owner.rsplit(":", 1)
+                    if owner_host != my_host:
+                        # Created by a worker on a different compute node — never delete!
+                        continue
+                    stale = not _pid_is_alive(int(pid_str))
+                else:
+                    owner_pid = int(raw_owner)
+                    stale = not _pid_is_alive(owner_pid)
             except (OSError, ValueError):
-                stale = (now_ts - st.st_mtime) >= LEGACY_ORPHAN_AGE_SECONDS
+                stale = False
         else:
-            # Legacy directory created before .owner_pid tracking
-            stale = (now_ts - st.st_mtime) >= LEGACY_ORPHAN_AGE_SECONDS
+            stale = (now_ts - st.st_mtime) >= 3600.0
         if stale:
             shutil.rmtree(entry, ignore_errors=True)
             removed += 1
@@ -115,13 +124,22 @@ def _sweep_stale_tmp_dirs(tmp_root: Path, uid: int, now: float | None = None) ->
 def candidate_node_tmp_roots(
     environ: dict[str, str] | None = None,
     home_dir: Path | None = None,
+    exclude_roots: list[Path] | None = None,
 ) -> list[Path]:
-    """Return writable node-local temp directories strictly outside $HOME."""
+    """Return writable node-local temp directories strictly outside $HOME and shared /scratch."""
     env = os.environ if environ is None else environ
     home_resolved = str((home_dir or Path.home()).resolve())
+    excluded_prefixes = [home_resolved, "/scratch"]
+    for ex in (exclude_roots or []):
+        try:
+            excluded_prefixes.append(str(ex.resolve()))
+        except OSError:
+            pass
+
     seen: set[str] = set()
     roots: list[Path] = []
-    for raw in (env.get("SLURM_TMPDIR"), "/tmp", env.get("TMPDIR")):
+    # Never include $TMPDIR here because finemap.sh exports TMPDIR to shared /scratch/.../tmp/<RUN_ID>.
+    for raw in (env.get("SLURM_TMPDIR"), "/tmp"):
         if not raw:
             continue
         p = Path(raw)
@@ -131,7 +149,7 @@ def candidate_node_tmp_roots(
             res = str(p.resolve())
         except OSError:
             continue
-        if res == home_resolved or res.startswith(home_resolved + os.sep):
+        if any(res == pref or res.startswith(pref.rstrip(os.sep) + os.sep) for pref in excluded_prefixes if pref):
             continue
         if res not in seen:
             seen.add(res)
@@ -149,7 +167,12 @@ def allocate_locus_workdir(
 ) -> WorkdirClaim:
     """Atomically reserve space on node-local /tmp or spill cleanly to `final_loci_root`."""
     uid = os.getuid()
-    candidates = candidate_node_tmp_roots() if tmp_candidates is None else tmp_candidates
+    my_host = socket.gethostname()
+    candidates = (
+        candidate_node_tmp_roots(exclude_roots=[final_loci_root])
+        if tmp_candidates is None
+        else tmp_candidates
+    )
 
     for cand in candidates:
         lock_path = cand / f".gwasfm_space_{uid}.lock"
@@ -174,10 +197,12 @@ def allocate_locus_workdir(
                     if not isinstance(info, dict):
                         continue
                     pid = int(info.get("pid", -1))
+                    host = str(info.get("host", my_host))
                     dpath = Path(str(info.get("dir", "")))
                     res_b = int(info.get("reserve", 0))
-                    if _pid_is_alive(pid) and dpath.is_dir():
-                        live_claims[cid] = {"pid": pid, "dir": str(dpath), "reserve": res_b}
+                    alive = (host != my_host) or _pid_is_alive(pid)
+                    if alive and dpath.is_dir():
+                        live_claims[cid] = {"host": host, "pid": pid, "dir": str(dpath), "reserve": res_b}
                         written_b = _dir_size_bytes(dpath)
                         unwritten_reserved += max(0, res_b - written_b)
 
@@ -185,9 +210,10 @@ def allocate_locus_workdir(
                 effective_after = free_now - unwritten_reserved - reserve_bytes
                 if effective_after >= min_headroom_bytes:
                     work_dir = Path(tempfile.mkdtemp(prefix=f"gwasfm_{safe_region}_", dir=str(cand)))
-                    (work_dir / ".owner_pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-                    claim_id = f"{os.getpid()}_{uuid.uuid4().hex[:8]}"
+                    (work_dir / ".owner_pid").write_text(f"{my_host}:{os.getpid()}\n", encoding="utf-8")
+                    claim_id = f"{my_host}_{os.getpid()}_{uuid.uuid4().hex[:8]}"
                     live_claims[claim_id] = {
+                        "host": my_host,
                         "pid": os.getpid(),
                         "dir": str(work_dir),
                         "reserve": reserve_bytes,
@@ -213,7 +239,7 @@ def allocate_locus_workdir(
 
     final_loci_root.mkdir(parents=True, exist_ok=True)
     spill_dir = Path(tempfile.mkdtemp(prefix=f"gwasfm_{safe_region}_", dir=str(final_loci_root)))
-    (spill_dir / ".owner_pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+    (spill_dir / ".owner_pid").write_text(f"{my_host}:{os.getpid()}\n", encoding="utf-8")
     return WorkdirClaim(
         work_dir=spill_dir,
         using_node_tmp=False,
@@ -225,7 +251,7 @@ def allocate_explicit_temp_workdir(safe_region: str, explicit_temp_dir: Path) ->
     """Stage locus work directly inside a caller-specified temp directory (e.g. /scratch)."""
     explicit_temp_dir.mkdir(parents=True, exist_ok=True)
     work_dir = Path(tempfile.mkdtemp(prefix=f"gwasfm_{safe_region}_", dir=str(explicit_temp_dir)))
-    (work_dir / ".owner_pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+    (work_dir / ".owner_pid").write_text(f"{socket.gethostname()}:{os.getpid()}\n", encoding="utf-8")
     return WorkdirClaim(
         work_dir=work_dir,
         using_node_tmp=False,
