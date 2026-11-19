@@ -3,6 +3,8 @@
 .licenses/
 .nextflow/
 .nextflow.log*
+report-*.html
+timeline-*.html
 slurm-*.out
 .env
 .tools/

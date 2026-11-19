@@ -2,8 +2,8 @@
 #SBATCH --job-name=GWASfinemapping
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=2
-#SBATCH --mem=8G
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
 #SBATCH --time=48:00:00
 #SBATCH --output=slurm-gwasfm-%j.out
 #
@@ -317,6 +317,8 @@ NF_CMD=(
   -profile "$PROFILE"
   -work-dir "${GWASFM_NXF_WORK}"
   -with-trace "${LOG_ROOT}/trace.tsv"
+  -with-report "${LOG_ROOT}/nextflow-report.html"
+  -with-timeline "${LOG_ROOT}/nextflow-timeline.html"
   --outdir "$OUTDIR"
   --log_root "$LOG_ROOT"
   --scratch_dir "$SCRATCH_ROOT"

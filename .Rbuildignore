@@ -33,4 +33,6 @@
 ^work$
 ^output$
 ^slurm-.*$
+^report-.*\.html$
+^timeline-.*\.html$
 ^.*\.Rcheck$
