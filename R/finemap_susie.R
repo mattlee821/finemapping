@@ -178,7 +178,8 @@ compute_credible_sets_fast <- function(fit, R, coverage = 0.95,
 fit_susie_from_prescaled_xtx <- function(z, XtX, n, L, coverage, max_iter,
                                          refine, prior_weights = NULL,
                                          R_finite = NULL, R_mismatch = "none",
-                                         frob_sq = NULL, ld_scale = 1) {
+                                         frob_sq = NULL, ld_scale = 1,
+                                         precomputed_eigen = NULL) {
   ns <- asNamespace("susieR")
   apply_pve <- get("apply_pve_adjustment", envir = ns)
   working_fn <- get("summary_stats_working_quantities", envir = ns)
@@ -296,9 +297,13 @@ fit_susie_from_prescaled_xtx <- function(z, XtX, n, L, coverage, max_iter,
     )
     ss$data$R_mismatch <- R_mismatch
     if (R_mismatch != "none") {
-      eig <- eigen(XtX, symmetric = TRUE)
-      eig$values <- eig$values / ld_scale
-      ss$data$eigen_R <- eig
+      if (!is.null(precomputed_eigen)) {
+        ss$data$eigen_R <- precomputed_eigen
+      } else {
+        eig <- eigen(XtX, symmetric = TRUE)
+        eig$values <- eig$values / ld_scale
+        ss$data$eigen_R <- eig
+      }
     }
     ss$params$R_mismatch <- R_mismatch
     ss$params$R_mismatch_method <- "mle"
@@ -324,10 +329,10 @@ fit_susie_from_prescaled_xtx <- function(z, XtX, n, L, coverage, max_iter,
 run_susie_model <- function(variants, R, method_id, effective_n = NULL,
                             reference_sample_size = NULL, L = 10L,
                             coverage = 0.95, min_abs_corr = 0.5,
-                            max_iter = 50L, refine = FALSE,
+                            max_iter = 100L, refine = FALSE,
                             R_mismatch = "eb_mix",
                             psd_max_variants = 5000L,
-                            eigen_max_variants = 5000L,
+                            eigen_max_variants = 20000L,
                             prior_weights = NULL,
                             allow_missing_n = FALSE) {
   if (!method_id %in% c("susie_rss", "susie_rrss", "polyfun")) {
@@ -367,13 +372,6 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
   }
   ids <- variant_key(variants)
   gwas_ids <- resolve_gwas_variant_ids(variants, ids)
-  ld_check <- validate_ld_matrix(
-    R,
-    variant_ids = ids,
-    check_psd = TRUE,
-    psd_max_variants = psd_max_variants
-  )
-  psd_status <- attr(ld_check, "psd_status") %||% "passed"
   n <- resolve_effective_n(variants, effective_n, allow_missing = allow_missing_n)
 
   r_mismatch_requested <- if (method_id == "susie_rrss") R_mismatch else "none"
@@ -397,14 +395,6 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
            call. = FALSE)
     }
     R_finite <- reference_sample_size
-    if (R_mismatch != "none") {
-      if (nrow(R) <= as.integer(eigen_max_variants)) {
-        q_art_eigen_status <- "computed"
-      } else {
-        R_mismatch <- "none"
-        q_art_eigen_status <- "skipped_large_m"
-      }
-    }
   } else {
     R_finite <- NULL
     R_mismatch <- "none"
@@ -416,44 +406,66 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
   }
   frob_sq_attr <- attr(R, "frob_sq")
 
-  # validate_ld_matrix already verified unit diagonal and symmetry:
-  # standardize = FALSE avoids 4 redundant M x M copies, and min_abs_corr = NULL
-  # avoids susieR 2.0.0's un-subsampled get_purity() O(M^2) allocation on diffuse slots.
-  # When R was pre-scaled in-place to XtX = (n - 1) * R at load time, bypass
-  # susie_rss's second M x M allocation cleanly via sufficient_stats_constructor.
+  will_compute_eigen_r <- (method_id == "susie_rrss") &&
+    (R_mismatch != "none") &&
+    (nrow(R) <= as.integer(eigen_max_variants))
+
+  ld_check <- validate_ld_matrix(
+    R,
+    variant_ids = ids,
+    check_psd = !will_compute_eigen_r,
+    psd_max_variants = psd_max_variants
+  )
+  psd_status <- attr(ld_check, "psd_status") %||% "passed"
+
+  precomputed_eigen <- NULL
+  if (method_id == "susie_rrss" && R_mismatch != "none") {
+    if (will_compute_eigen_r) {
+      eig <- eigen(R, symmetric = TRUE)
+      eig$values <- eig$values / ld_scale
+      if (min(eig$values) < -1e-8) {
+        stop("LD matrix is not positive semidefinite; no repair was applied.",
+             call. = FALSE)
+      }
+      psd_status <- "passed"
+      precomputed_eigen <- eig
+      q_art_eigen_status <- "computed"
+    } else {
+      # Keep R_mismatch ("eb_mix" / "eb") active for SER init + lambda_bias + B_corrected
+      # at ALL region sizes while skipping O(M^3) Q_art eigendecomposition above eigen_max_variants.
+      precomputed_eigen <- list(
+        values = 1.0,
+        vectors = matrix(0.0, nrow = nrow(R), ncol = 1L)
+      )
+      q_art_eigen_status <- "skipped_large_m"
+    }
+  }
+
   expected_scale <- if (is.null(n$value)) 1 else (n$value - 1)
   if (abs(ld_scale - expected_scale) <= 1e-6 * max(1, expected_scale)) {
-    fit <- fit_susie_from_prescaled_xtx(
-      z = variants$EZ,
-      XtX = R,
-      n = n$value,
-      L = as.integer(L),
-      coverage = coverage,
-      max_iter = as.integer(max_iter),
-      refine = refine,
-      prior_weights = prior_weights,
-      R_finite = R_finite,
-      R_mismatch = R_mismatch,
-      frob_sq = frob_sq_attr,
-      ld_scale = ld_scale
-    )
+    xtx_use <- R
   } else {
-    R_unscaled <- if (ld_scale == 1) R else R / ld_scale
-    fit <- susieR::susie_rss(
-      z = variants$EZ,
-      R = R_unscaled,
-      n = n$value,
-      L = as.integer(L),
-      prior_weights = prior_weights,
-      standardize = FALSE,
-      coverage = coverage,
-      min_abs_corr = NULL,
-      max_iter = as.integer(max_iter),
-      refine = refine,
-      R_finite = R_finite,
-      R_mismatch = R_mismatch
-    )
+    xtx_use <- R * (expected_scale / ld_scale)
+    dimnames(xtx_use) <- dimnames(R)
   }
+
+  fit <- fit_susie_from_prescaled_xtx(
+    z = variants$EZ,
+    XtX = xtx_use,
+    n = n$value,
+    L = as.integer(L),
+    coverage = coverage,
+    max_iter = as.integer(max_iter),
+    refine = refine,
+    prior_weights = prior_weights,
+    R_finite = R_finite,
+    R_mismatch = R_mismatch,
+    frob_sq = frob_sq_attr,
+    ld_scale = expected_scale,
+    precomputed_eigen = precomputed_eigen
+  )
+  rm(xtx_use, precomputed_eigen)
+
   cs <- compute_credible_sets_fast(
     fit,
     R = R,
@@ -461,9 +473,49 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
     min_abs_corr = min_abs_corr,
     ld_scale = ld_scale
   )
+
+  raw_cs_count <- length(cs$cs)
+  V_vec <- if (!is.null(fit$V)) as.numeric(fit$V) else numeric()
+  lbf_vec <- if (!is.null(fit$lbf)) as.numeric(fit$lbf) else numeric()
+  active_idx <- if (raw_cs_count > 0L) as.integer(cs$cs_index) else integer()
+
+  is_converged <- isTRUE(fit$converged)
+  max_V_all <- if (length(V_vec) > 0L && any(is.finite(V_vec))) max(V_vec, na.rm = TRUE) else NA_real_
+  max_V_cs <- if (length(active_idx) > 0L && length(V_vec) >= max(active_idx) &&
+                  any(is.finite(V_vec[active_idx]))) {
+    max(V_vec[active_idx], na.rm = TRUE)
+  } else {
+    NA_real_
+  }
+  max_lbf_val <- if (length(lbf_vec) > 0L && any(is.finite(lbf_vec))) max(lbf_vec, na.rm = TRUE) else NA_real_
+
+  # Two-tier credible-set validity gate:
+  # Suppress primary credible sets (and clear fit$sets$cs so coloc::coloc.susie skips them)
+  # if IBSS failed to converge OR any active CS slot blew up to V > 1.0 on standardized z-stats.
+  implausible_v_flag <- is.finite(max_V_cs) && (max_V_cs > 1.0)
+  suppress_cs <- (!is_converged) || implausible_v_flag
+  suppress_reason <- if (!is_converged && implausible_v_flag) {
+    "non_converged_and_implausible_prior_variance"
+  } else if (!is_converged) {
+    "non_converged"
+  } else if (implausible_v_flag) {
+    "implausible_prior_variance_gt_1"
+  } else {
+    NA_character_
+  }
+  dropped_cs_count <- if (suppress_cs) as.integer(raw_cs_count) else 0L
+  if (suppress_cs) {
+    cs <- list(
+      cs = NULL,
+      coverage = NULL,
+      requested_coverage = coverage
+    )
+  }
+
   fit$sets <- cs
   fit <- name_susie_fit_variants(fit, gwas_ids)
 
+  r_rel_warn <- isTRUE(fit$R_finite_diagnostics$R_reliability_flag)
   credible_sets <- if (length(cs$cs) == 0L) {
     data.frame(
       credible_set_id = character(),
@@ -473,17 +525,24 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
       min_abs_corr = numeric(),
       mean_abs_corr = numeric(),
       median_abs_corr = numeric(),
+      prior_variance_V = numeric(),
+      lbf = numeric(),
+      ld_mismatch_warning = logical(),
       stringsAsFactors = FALSE
     )
   } else {
+    eff_idx <- as.integer(cs$cs_index)
     data.frame(
       credible_set_id = names(cs$cs),
-      effect_index = as.integer(cs$cs_index),
+      effect_index = eff_idx,
       size = as.integer(lengths(cs$cs)),
       coverage = as.numeric(cs$coverage),
       min_abs_corr = cs$purity$min.abs.corr,
       mean_abs_corr = cs$purity$mean.abs.corr,
       median_abs_corr = cs$purity$median.abs.corr,
+      prior_variance_V = if (length(V_vec) >= max(eff_idx)) as.numeric(V_vec[eff_idx]) else rep(NA_real_, length(eff_idx)),
+      lbf = if (length(lbf_vec) >= max(eff_idx)) as.numeric(lbf_vec[eff_idx]) else rep(NA_real_, length(eff_idx)),
+      ld_mismatch_warning = rep(r_rel_warn, length(eff_idx)),
       stringsAsFactors = FALSE
     )
   }
@@ -516,15 +575,38 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
     }
   }
 
+  elbo_len <- length(fit$elbo)
+  initial_elbo_val <- if (elbo_len >= 1L) as.numeric(fit$elbo[[1L]]) else NA_real_
+  final_elbo_val <- if (elbo_len >= 1L) as.numeric(utils::tail(fit$elbo, 1L)) else NA_real_
+  final_elbo_chg <- if (elbo_len >= 2L) {
+    as.numeric(fit$elbo[[elbo_len]] - fit$elbo[[elbo_len - 1L]])
+  } else {
+    NA_real_
+  }
+
   diagnostics <- list(
-    converged = isTRUE(fit$converged),
+    converged = is_converged,
     convergence_status = if (is.null(fit$converged)) NA else fit$converged,
     convergence_reason = fit$convergence_reason %||% NA_character_,
     iterations = fit$niter %||% NA_integer_,
-    final_elbo = if (length(fit$elbo) > 0L) utils::tail(fit$elbo, 1L) else NA_real_,
+    initial_elbo = initial_elbo_val,
+    final_elbo = final_elbo_val,
+    final_elbo_change = final_elbo_chg,
+    max_prior_variance_V = max_V_all,
+    max_cs_prior_variance_V = max_V_cs,
+    max_lbf = max_lbf_val,
+    implausible_prior_variance_flag = implausible_v_flag,
+    credible_sets_suppressed = suppress_cs,
+    credible_sets_suppressed_reason = suppress_reason,
+    unconverged_cs_dropped = dropped_cs_count,
     psd_check = psd_status,
     q_art_eigen = q_art_eigen_status,
+    r_mismatch_requested = r_mismatch_requested,
     r_mismatch_effective = R_mismatch,
+    lambda_bias = fit$R_finite_diagnostics$lambda_bias %||% NA_real_,
+    B_corrected = fit$R_finite_diagnostics$B_corrected %||% NA_real_,
+    Q_art = fit$R_finite_diagnostics$Q_art %||% NA_real_,
+    artifact_evaluable = fit$R_finite_diagnostics$artifact_evaluable %||% NA,
     R_reliability_flag = fit$R_finite_diagnostics$R_reliability_flag %||% NA,
     SER_fallback = fit$R_finite_diagnostics$SER_fallback %||% NA,
     artifact_flag = fit$R_finite_diagnostics$artifact_flag %||% NA,
@@ -598,7 +680,7 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
 
 run_susie_rss <- function(variants, R, effective_n = NULL, L = 10L,
                           coverage = 0.95, min_abs_corr = 0.5,
-                          max_iter = 50L, refine = FALSE,
+                          max_iter = 100L, refine = FALSE,
                           psd_max_variants = 5000L,
                           allow_missing_n = FALSE) {
   run_susie_model(
@@ -618,10 +700,10 @@ run_susie_rss <- function(variants, R, effective_n = NULL, L = 10L,
 
 run_susie_rrss <- function(variants, R, reference_sample_size,
                            effective_n = NULL, L = 10L, coverage = 0.95,
-                           min_abs_corr = 0.5, max_iter = 50L,
+                           min_abs_corr = 0.5, max_iter = 100L,
                            refine = FALSE, R_mismatch = "eb_mix",
                            psd_max_variants = 5000L,
-                           eigen_max_variants = 5000L,
+                           eigen_max_variants = 20000L,
                            allow_missing_n = FALSE) {
   run_susie_model(
     variants = variants,

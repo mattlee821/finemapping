@@ -30,7 +30,8 @@ safe_region           <- NULL
 effective_n           <- NULL
 reference_sample_size <- 420542L
 max_causal            <- 10L
-max_iter              <- 50L
+max_iter              <- 100L
+susie_refine          <- FALSE
 coverage              <- 0.95
 min_abs_corr          <- 0.5
 r_mismatch            <- "eb_mix"
@@ -60,6 +61,7 @@ for (i in seq.int(1L, length(cli_args), by = 2L)) {
   else if (flag == "--reference-sample-size") reference_sample_size <- as.numeric(val)
   else if (flag == "--max-causal")      max_causal <- as.integer(val)
   else if (flag == "--max-iter")        max_iter <- as.integer(val)
+  else if (flag == "--susie-refine")    susie_refine <- tolower(val) %in% c("true", "1", "yes")
   else if (flag == "--coverage")        coverage <- as.numeric(val)
   else if (flag == "--min-abs-corr")    min_abs_corr <- as.numeric(val)
   else if (flag == "--r-mismatch")      r_mismatch <- val
@@ -343,6 +345,7 @@ if ("susie_rss" %in% methods_req) {
     coverage = coverage,
     min_abs_corr = min_abs_corr,
     max_iter = max_iter,
+    refine = susie_refine,
     allow_missing_n = TRUE
   )
   fit_s <- (proc.time() - t_f0)[["elapsed"]]
@@ -364,6 +367,7 @@ if ("susie_rrss" %in% methods_req) {
     coverage = coverage,
     min_abs_corr = min_abs_corr,
     max_iter = max_iter,
+    refine = susie_refine,
     R_mismatch = r_mismatch,
     allow_missing_n = TRUE
   )
@@ -390,6 +394,7 @@ if ("polyfun" %in% methods_req) {
       coverage = coverage,
       min_abs_corr = min_abs_corr,
       max_iter = max_iter,
+      refine = susie_refine,
       allow_missing_n = TRUE
     )
     res_pf$variants$SNPVAR <- priors_pre$snpvar
@@ -413,6 +418,7 @@ if ("polyfun" %in% methods_req) {
       coverage = coverage,
       min_abs_corr = min_abs_corr,
       max_iter = max_iter,
+      refine = susie_refine,
       allow_missing_n = TRUE
     )
   }

@@ -34,7 +34,8 @@ polyfun_priors       <- NULL
 missing_prior_policy <- "baseline_floor"
 effective_n          <- NULL
 max_causal           <- 10L
-max_iter             <- 50L
+max_iter             <- 100L
+susie_refine         <- FALSE
 coverage             <- 0.95
 min_abs_corr         <- 0.5
 out_rds              <- file.path(default_locus_dir, "methods/polyfun/region_result.rds")
@@ -60,6 +61,7 @@ if (length(cli_args) > 0L) {
     else if (flag == "--effective-n")     effective_n   <- as.numeric(val)
     else if (flag == "--max-causal")      max_causal    <- as.integer(val)
     else if (flag == "--max-iter")        max_iter      <- as.integer(val)
+    else if (flag == "--susie-refine")    susie_refine  <- tolower(val) %in% c("true", "1", "yes")
     else if (flag == "--coverage")        coverage      <- as.numeric(val)
     else if (flag == "--min-abs-corr")    min_abs_corr  <- as.numeric(val)
     else if (flag == "--reference-sample-size") {
@@ -83,18 +85,18 @@ if (allow_skip && (!file.exists(variants_path) || !file.exists(matrix_path))) {
 }
 
 # --- 2. Load gwasfinemapping functions ----------------------------------------
-if (requireNamespace("gwasfinemapping", quietly = TRUE) &&
-    exists("run_polyfun_susie", where = asNamespace("gwasfinemapping"), mode = "function")) {
-  library(gwasfinemapping)
+script_arg <- grep("^--file=", commandArgs(), value = TRUE)
+repo_root <- if (length(script_arg) > 0L) {
+  dirname(dirname(dirname(normalizePath(sub("^--file=", "", script_arg[[1L]])))))
 } else {
-  script_arg <- grep("^--file=", commandArgs(), value = TRUE)
-  repo_root <- if (length(script_arg) > 0L) {
-    dirname(dirname(dirname(normalizePath(sub("^--file=", "", script_arg[[1L]])))))
-  } else {
-    getwd()
-  }
-  for (f in list.files(file.path(repo_root, "R"), pattern = "[.]R$", full.names = TRUE)) {
-    source(f)
+  getwd()
+}
+if (requireNamespace("gwasfinemapping", quietly = TRUE)) {
+  library(gwasfinemapping)
+}
+if (dir.exists(file.path(repo_root, "R"))) {
+  for (f in sort(list.files(file.path(repo_root, "R"), pattern = "[.]R$", full.names = TRUE))) {
+    source(f, local = FALSE)
   }
 }
 
@@ -129,15 +131,18 @@ priors_pre <- resolve_pf_fn(
 )
 
 # --- 5. Read Fortran-order binary LD matrix (.npy) scaled in-place to XtX -----
+ss_non_na <- if ("SS" %in% names(variants)) as.numeric(variants$SS[!is.na(variants$SS)]) else numeric()
 n_eff_load <- if (!is.null(effective_n)) {
   as.numeric(effective_n)
+} else if (length(ss_non_na) > 0L) {
+  min(ss_non_na)
 } else {
-  min(variants$SS[!is.na(variants$SS)])
+  NULL
 }
 R <- if (identical(priors_pre$status, "skipped_unsupported_chromosome")) {
   matrix(1, nrow = 1L, ncol = 1L, dimnames = list("skip", "skip"))
 } else {
-  read_ld_matrix(matrix_path, ids_path = matrix_ids, scale = n_eff_load - 1)
+  read_ld_matrix(matrix_path, ids_path = matrix_ids, scale = if (is.null(n_eff_load)) 1 else (n_eff_load - 1))
 }
 io_seconds <- (proc.time() - t_io_start)[["elapsed"]]
 
@@ -154,7 +159,9 @@ if (!identical(priors_pre$status, "skipped_unsupported_chromosome") &&
     L = max_causal,
     coverage = coverage,
     min_abs_corr = min_abs_corr,
-    max_iter = max_iter
+    max_iter = max_iter,
+    refine = susie_refine,
+    allow_missing_n = TRUE
   )
   result$variants$SNPVAR <- priors_pre$snpvar
   result$variants$PRIOR_MATCHED <- priors_pre$matched
@@ -175,7 +182,9 @@ if (!identical(priors_pre$status, "skipped_unsupported_chromosome") &&
     L = max_causal,
     coverage = coverage,
     min_abs_corr = min_abs_corr,
-    max_iter = max_iter
+    max_iter = max_iter,
+    refine = susie_refine,
+    allow_missing_n = TRUE
   )
 }
 fit_seconds <- (proc.time() - t_fit_start)[["elapsed"]]

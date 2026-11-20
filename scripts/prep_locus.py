@@ -46,6 +46,7 @@ from run_finemapping import (  # noqa: E402
     default_panukb_dir,
     ensure_regional_index,
     extract_ld_from_local_panel,
+    filter_records_by_min_maf,
     format_vcf_region,
     inspect_vcf_tags,
     is_mhc_core_grc_grch38,
@@ -342,6 +343,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Optional persistent disk cache root for remote BlockMatrix part-* files",
     )
     p.add_argument("--local-ld-panel", default=None, help="Optional offline .npz fixture LD panel")
+    p.add_argument("--min-maf", type=float, default=None, help="Minor allele frequency filter min(AF, 1-AF) >= min_maf")
     p.add_argument("--fetch-workers", type=int, default=4)
     p.add_argument("--block-cache", type=int, default=4)
     p.add_argument("--keep-intermediates", action="store_true")
@@ -400,14 +402,36 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
     )
     local_ld_panel = Path(args.local_ld_panel).expanduser().resolve() if args.local_ld_panel else None
 
-    # --- 2. Regional VCF extraction -------------------------------------------
+    # --- 2. Regional VCF extraction & MAF filtering ---------------------------
+    min_maf = float(args.min_maf if args.min_maf is not None else screen.get("min_maf", 0.01))
     t_vcf0 = time.monotonic()
-    records = query_vcf(
+    raw_records = query_vcf(
         vcf,
         region=format_vcf_region(vcf_tags, chrom, start, end),
         vcf_tags=vcf_tags,
     )
+    n_source_records = len(raw_records)
+    records, maf_excluded = filter_records_by_min_maf(raw_records, min_maf)
     vcf_query_seconds = round(time.monotonic() - t_vcf0, 3)
+
+    if not records:
+        qc_skip = {
+            "region_id": region_id,
+            "region_type": region_type,
+            "source_region_grch38": f"{chrom}:{start}-{end}",
+            "status": "skipped_no_variants_after_min_maf",
+            "min_maf": min_maf,
+            "mhc_region": locus["mhc_region"],
+            "mhc_core_grc": locus["mhc_core_grc"],
+            "variants_in_source_region": n_source_records,
+            "variants_removed_min_maf": len(maf_excluded),
+            "variants_after_min_maf": 0,
+            "variants_lifted": 0,
+            "variants_ld_matched": 0,
+            "exclusion_reasons": dict(Counter(r["reason"] for r in maf_excluded)),
+        }
+        write_json(outdir / "locus_prep_qc.json", qc_skip)
+        return qc_skip
 
     # --- 3. GRCh38 -> GRCh37 liftover + FASTA-verified normalisation ----------
     t_lift0 = time.monotonic()
@@ -440,12 +464,15 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
             "region_type": region_type,
             "source_region_grch38": f"{chrom}:{start}-{end}",
             "status": "skipped_no_lifted_variants",
+            "min_maf": min_maf,
             "mhc_region": locus["mhc_region"],
             "mhc_core_grc": locus["mhc_core_grc"],
-            "variants_in_source_region": len(records),
+            "variants_in_source_region": n_source_records,
+            "variants_removed_min_maf": len(maf_excluded),
+            "variants_after_min_maf": len(records),
             "variants_lifted": 0,
             "variants_ld_matched": 0,
-            "exclusion_reasons": dict(Counter(r["reason"] for r in liftover_excluded + cross_chrom_excluded)),
+            "exclusion_reasons": dict(Counter(r["reason"] for r in maf_excluded + liftover_excluded + cross_chrom_excluded)),
         }
         write_json(outdir / "locus_prep_qc.json", qc_skip)
         return qc_skip
@@ -471,7 +498,7 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
     matched, panel_excluded = resolve_panel_matches(normalized, matches)
     match_seconds = round(time.monotonic() - t_m0, 3)
 
-    all_excluded = liftover_excluded + cross_chrom_excluded + panel_excluded
+    all_excluded = maf_excluded + liftover_excluded + cross_chrom_excluded + panel_excluded
     reason_counts = dict(Counter(r["reason"] for r in all_excluded))
 
     if not matched:
@@ -481,9 +508,12 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
             "source_region_grch38": f"{chrom}:{start}-{end}",
             "target_region_grch37": f"{target_chrom}:{target_start}-{target_end}",
             "status": "skipped_no_panel_matched_variants",
+            "min_maf": min_maf,
             "mhc_region": locus["mhc_region"],
             "mhc_core_grc": locus["mhc_core_grc"],
-            "variants_in_source_region": len(records),
+            "variants_in_source_region": n_source_records,
+            "variants_removed_min_maf": len(maf_excluded),
+            "variants_after_min_maf": len(records),
             "variants_lifted": len(normalized),
             "variants_ld_matched": 0,
             "exclusion_reasons": reason_counts,
@@ -635,11 +665,14 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
         "split_at_panukb_radius": locus.get("split_at_panukb_radius", False),
         "extended_by_adjacent_lead": locus.get("extended_by_adjacent_lead", False),
         "significant_variants_in_region": locus["significant_variant_count"],
-        "variants_in_source_region": len(records),
+        "min_maf": min_maf,
+        "variants_in_source_region": n_source_records,
+        "variants_removed_min_maf": len(maf_excluded),
+        "variants_after_min_maf": len(records),
         "variants_lifted": len(normalized),
         "variants_ld_matched": len(matched_rows),
         "variants_allele_swapped": n_swapped,
-        "variants_excluded": len(records) - len(matched_rows),
+        "variants_excluded": n_source_records - len(matched_rows),
         "exclusion_reasons": reason_counts,
         "ss_min": ss_min,
         "ss_median": ss_median,

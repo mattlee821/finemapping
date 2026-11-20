@@ -70,8 +70,12 @@ Fine-mapping & reference options:
   --exclude-mhc              Exclude extended MHC (chr6:25.5-34.0 Mb GRCh38)
   --significance-lp FLOAT    Significance gate in -log10(P) (default: 7.30103 = P <= 5e-8)
   --cis-significance-lp FLT  Optional cis_gene significance gate override
+  --min-maf FLOAT            Minor allele frequency filter min(AF, 1-AF) >= FLOAT (default: 0.01; 0 disables)
   --region-flank-bp INT      Greedy lead flank in bp (default: 1500000 = 3 Mb window)
   --max-loci INT             Cap analyzed regions per GWAS (0 = all; default: 0)
+  --max-iter INT             Max SuSiE IBSS iterations for genome-wide loci (default: 100)
+  --cis-max-iter INT         Max SuSiE IBSS iterations for cis_gene regions (default: 200)
+  --susie-refine             Enable SuSiE CS refinement (opt-in; default: false)
 
 Batch control & execution (matching GWASprocessing):
   --row-limit INT            Eligible rows to run (0 = all; default: 0)
@@ -111,8 +115,12 @@ BM_PATH=""
 EXCLUDE_MHC="false"
 SIG_LP=""
 CIS_SIG_LP=""
+MIN_MAF="${GWASFM_MIN_MAF:-0.01}"
 FLANK_BP=""
 MAX_LOCI=""
+MAX_ITER="100"
+CIS_MAX_ITER="200"
+SUSIE_REFINE="false"
 ROW_LIMIT="0"
 FORCE="false"
 DRY_RUN="false"
@@ -150,8 +158,12 @@ while [[ $# -gt 0 ]]; do
     --exclude-mhc|--exclude_mhc) EXCLUDE_MHC="true"; shift ;;
     --significance-lp) SIG_LP="$2"; shift 2 ;;
     --cis-significance-lp) CIS_SIG_LP="$2"; shift 2 ;;
+    --min-maf|--min_maf) MIN_MAF="$2"; shift 2 ;;
     --region-flank-bp) FLANK_BP="$2"; shift 2 ;;
     --max-loci|--max_loci) MAX_LOCI="$2"; shift 2 ;;
+    --max-iter|--max_iter) MAX_ITER="$2"; shift 2 ;;
+    --cis-max-iter|--cis_max_iter) CIS_MAX_ITER="$2"; shift 2 ;;
+    --susie-refine|--susie_refine) SUSIE_REFINE="true"; shift ;;
     --row-limit|--row_limit) ROW_LIMIT="$2"; shift 2 ;;
     --force) FORCE="true"; shift ;;
     --dry-run|--dry_run) DRY_RUN="true"; shift ;;
@@ -271,13 +283,16 @@ if [[ -z "$CONTAINER_ENGINE" && -z "${GWASFM_CONTAINER:-}" ]]; then
     --methods "$METHODS_SPEC"
     --output-format "$OUTPUT_FORMAT"
     --significance-lp "${SIG_LP:-7.301029995664}"
+    --min-maf "$MIN_MAF"
     --region-flank-bp "${FLANK_BP:-1500000}"
     --max-region-width-bp 9500000
     --gene-window-bp 1000000
     --exclude-mhc "$EXCLUDE_MHC"
     --max-loci "${MAX_LOCI:-0}"
     --max-causal 10
-    --max-iter 50
+    --max-iter "$MAX_ITER"
+    --cis-max-iter "$CIS_MAX_ITER"
+    --susie-refine "$SUSIE_REFINE"
     --row-limit "$ROW_LIMIT"
     --force "$FORCE"
     --dry-run "$DRY_RUN"
@@ -337,6 +352,10 @@ NF_CMD=(
   --methods "$METHODS_SPEC"
   --output_format "$OUTPUT_FORMAT"
   --compress "$COMPRESS_MODE"
+  --min_maf "$MIN_MAF"
+  --max_iter "$MAX_ITER"
+  --cis_max_iter "$CIS_MAX_ITER"
+  --susie_refine "$SUSIE_REFINE"
   --exclude_mhc "$EXCLUDE_MHC"
   --row_limit "$ROW_LIMIT"
   --force "$FORCE"

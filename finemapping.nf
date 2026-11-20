@@ -57,6 +57,7 @@ process PREPARE_MANIFEST {
       ${opt('--effective-n', params.effective_n)} \\
       --significance-lp '${params.significance_lp}' \\
       ${opt('--cis-significance-lp', params.cis_significance_lp)} \\
+      --min-maf '${params.min_maf}' \\
       --region-flank-bp '${params.region_flank_bp}' \\
       --max-region-width-bp '${params.max_region_width_bp}' \\
       --gene-window-bp '${params.gene_window_bp}' \\
@@ -64,6 +65,8 @@ process PREPARE_MANIFEST {
       --max-loci '${params.max_loci}' \\
       --max-causal '${params.max_causal}' \\
       --max-iter '${params.max_iter}' \\
+      --cis-max-iter '${params.cis_max_iter}' \\
+      --susie-refine '${params.susie_refine}' \\
       --row-limit '${params.row_limit}' \\
       --force '${params.force}' \\
       --dry-run '${params.dry_run}' \\
@@ -103,6 +106,7 @@ cmd = [
     "--chain", row["chain"],
     "--population", row["ld_population"],
     "--significance-lp", str(row["significance_lp"]),
+    "--min-maf", str(row.get("min_maf", 0.01)),
     "--region-flank-bp", str(row["region_flank_bp"]),
     "--gene-window-bp", str(row["gene_window_bp"]),
     "--max-region-width-bp", str(row["max_region_width_bp"]),
@@ -213,7 +217,9 @@ cmd = [
     "--chain", row["chain"],
     "--grch37-fasta", row["grch37_fasta"],
     "--max-causal", str(row.get("max_causal", 10)),
-    "--max-iter", str(row.get("max_iter", 50)),
+    "--max-iter", str(row.get("max_iter", 100)),
+    "--cis-max-iter", str(row.get("cis_max_iter", 200)),
+    "--min-maf", str(row.get("min_maf", 0.01)),
     "--report", "true" if row.get("report", True) else "false",
     "--settings-hash", row.get("settings_hash", ""),
     "--output-record", f"{row_id}.row_record.json",

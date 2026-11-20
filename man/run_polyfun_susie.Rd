@@ -5,13 +5,14 @@
 run_polyfun_susie(variants, R, prior_weights = NULL, polyfun_priors = NULL,
   missing_prior_policy = c("baseline_floor", "drop", "error"),
   effective_n = NULL, L = 10L, coverage = 0.95, min_abs_corr = 0.5,
-  max_iter = 50L, refine = FALSE, psd_max_variants = 5000L)
+  max_iter = 100L, refine = FALSE, psd_max_variants = 5000L,
+  allow_missing_n = FALSE)
 }
 \arguments{
 \item{variants}{Validated variant data with signed \code{EZ} or valid
 \code{ES}/\code{SE}, GRCh37 \code{LD_CHROM}/\code{LD_POS}/\code{LD_REF}/\code{LD_ALT}
 (or \code{CHROM}/\code{POS}/\code{REF}/\code{ALT}), and \code{SS} unless
-\code{effective_n} is supplied.}
+\code{effective_n} is supplied or \code{allow_missing_n = TRUE}.}
 \item{R}{Signed LD matrix in the same allele-aware variant order.}
 \item{prior_weights}{Optional explicit non-negative numeric vector of prior
 causal weights. When omitted, priors are resolved from \code{polyfun_priors} or
@@ -32,6 +33,8 @@ or \code{"error"}.}
 \item{refine}{Whether to run the SuSiE refinement step.}
 \item{psd_max_variants}{Maximum variant count for dense \eqn{O(M^3)} PSD
 eigenvalue checking.}
+\item{allow_missing_n}{Allow \code{z}-only fitting (\code{n = NULL}) when
+neither \code{SS} nor \code{effective_n} is available.}
 }
 \value{
 A list containing functionally informed variant PIPs (plus \code{SNPVAR},

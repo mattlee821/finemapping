@@ -32,7 +32,8 @@ region_id       <- "cis_NPPB_chr1_10857464_12858945"
 region_type     <- "cis_gene"
 effective_n     <- NULL
 max_causal      <- 10L
-max_iter        <- 50L
+max_iter        <- 100L
+susie_refine    <- FALSE
 coverage        <- 0.95
 min_abs_corr    <- 0.5
 out_rds         <- file.path(default_locus_dir, "methods/susie_rss/region_result.rds")
@@ -56,6 +57,7 @@ if (length(cli_args) > 0L) {
     else if (flag == "--effective-n") effective_n  <- as.numeric(val)
     else if (flag == "--max-causal") max_causal    <- as.integer(val)
     else if (flag == "--max-iter")   max_iter      <- as.integer(val)
+    else if (flag == "--susie-refine") susie_refine <- tolower(val) %in% c("true", "1", "yes")
     else if (flag == "--coverage")   coverage      <- as.numeric(val)
     else if (flag == "--min-abs-corr") min_abs_corr <- as.numeric(val)
     else if (flag == "--reference-sample-size") {
@@ -79,17 +81,18 @@ if (allow_skip && (!file.exists(variants_path) || !file.exists(matrix_path))) {
 }
 
 # --- 2. Load gwasfinemapping functions ----------------------------------------
+script_arg <- grep("^--file=", commandArgs(), value = TRUE)
+repo_root <- if (length(script_arg) > 0L) {
+  dirname(dirname(dirname(normalizePath(sub("^--file=", "", script_arg[[1L]])))))
+} else {
+  getwd()
+}
 if (requireNamespace("gwasfinemapping", quietly = TRUE)) {
   library(gwasfinemapping)
-} else {
-  script_arg <- grep("^--file=", commandArgs(), value = TRUE)
-  repo_root <- if (length(script_arg) > 0L) {
-    dirname(dirname(dirname(normalizePath(sub("^--file=", "", script_arg[[1L]])))))
-  } else {
-    getwd()
-  }
-  for (f in list.files(file.path(repo_root, "R"), pattern = "[.]R$", full.names = TRUE)) {
-    source(f)
+}
+if (dir.exists(file.path(repo_root, "R"))) {
+  for (f in sort(list.files(file.path(repo_root, "R"), pattern = "[.]R$", full.names = TRUE))) {
+    source(f, local = FALSE)
   }
 }
 
@@ -112,12 +115,15 @@ for (bcol in intersect(c("mhc_region", "mhc_core_grc", "PANEL_ALLELE_SWAPPED"), 
 # --- 4. Read Fortran-order binary LD matrix (.npy) scaled in-place to XtX -----
 # Pre-scaling R -> (n - 1) * R on load avoids allocating a second M x M matrix
 # inside susieR, cutting peak RAM in half while preserving exact bit-for-bit PIPs.
+ss_non_na <- if ("SS" %in% names(variants)) as.numeric(variants$SS[!is.na(variants$SS)]) else numeric()
 n_eff_load <- if (!is.null(effective_n)) {
   as.numeric(effective_n)
+} else if (length(ss_non_na) > 0L) {
+  min(ss_non_na)
 } else {
-  min(variants$SS[!is.na(variants$SS)])
+  NULL
 }
-R <- read_ld_matrix(matrix_path, ids_path = matrix_ids, scale = n_eff_load - 1)
+R <- read_ld_matrix(matrix_path, ids_path = matrix_ids, scale = if (is.null(n_eff_load)) 1 else (n_eff_load - 1))
 io_seconds <- (proc.time() - t_io_start)[["elapsed"]]
 
 # --- 5. Fit SuSiE-RSS & extract 95% credible sets -----------------------------
@@ -129,7 +135,9 @@ result <- run_susie_rss(
   L = max_causal,
   coverage = coverage,
   min_abs_corr = min_abs_corr,
-  max_iter = max_iter
+  max_iter = max_iter,
+  refine = susie_refine,
+  allow_missing_n = TRUE
 )
 fit_seconds <- (proc.time() - t_fit_start)[["elapsed"]]
 

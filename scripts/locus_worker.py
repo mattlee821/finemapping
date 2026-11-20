@@ -39,7 +39,11 @@ MIN_DYNAMIC_RESERVE_BYTES = int(1.5 * (1024 ** 3))     # Floor for sparse loci
 LARGE_MATRIX_DISK_THRESHOLD_BYTES = int(16.0 * (1024 ** 3))  # >=16 GiB prefers node-local disk over /dev/shm cgroup RAM
 DEFAULT_MIN_HEADROOM_BYTES = int(4.0 * (1024 ** 3))    # Leave >=4 GiB untouched on node temp/tmpfs
 LEGACY_ORPHAN_AGE_SECONDS = 120.0
-SKIPPED_PREP_STATUSES = ("skipped_no_lifted_variants", "skipped_no_panel_matched_variants")
+SKIPPED_PREP_STATUSES = (
+    "skipped_no_variants_after_min_maf",
+    "skipped_no_lifted_variants",
+    "skipped_no_panel_matched_variants",
+)
 
 ENOSPC_MARKERS = (
     "not enough free space",
@@ -472,6 +476,8 @@ def _build_prep_cmd(
         row["grch37_fasta"],
         "--cache-dir",
         prep_cache,
+        "--min-maf",
+        str(row.get("min_maf", 0.01)),
     ]
     if row.get("panukb_dir"):
         cmd.extend(["--panukb-dir", row["panukb_dir"]])
@@ -559,8 +565,16 @@ def run_locus_worker(args: argparse.Namespace) -> int:
 
     final_loc_dir = final_loci_root / reg_id
 
+    eff_max_iter = (
+        int(row.get("cis_max_iter", 200))
+        if reg_type == "cis_gene"
+        else int(row.get("max_iter", 100))
+    )
     # Fast per-locus checkpoint skip when complete outputs already exist from a prior run
-    if (not keep_inter) and (not force_run) and locus_outputs_are_complete(final_loc_dir, row["methods"]):
+    inter_files_ready = (not keep_inter) or (
+        (final_loc_dir / "matrix.npy").is_file() and (final_loc_dir / "matched_variants.tsv").is_file()
+    )
+    if inter_files_ready and (not force_run) and locus_outputs_are_complete(final_loc_dir, row["methods"]):
         try:
             (gwas_log_dir / f"02_prep_{safe_reg}.reuse.log").write_text(
                 f"[locus_worker] Reusing completed locus {reg_id} from {final_loc_dir}\n",
@@ -696,7 +710,7 @@ def run_locus_worker(args: argparse.Namespace) -> int:
                 "--max-causal",
                 str(row.get("max_causal", 10)),
                 "--max-iter",
-                str(row.get("max_iter", 50)),
+                str(eff_max_iter),
                 "--reference-sample-size",
                 str(screen["reference_sample_size"]),
                 "--allow-skipped-locus",
@@ -706,6 +720,8 @@ def run_locus_worker(args: argparse.Namespace) -> int:
                 "--unlink-matrix",
                 "false" if keep_inter else "true",
             ]
+            if row.get("susie_refine"):
+                m_cmd.extend(["--susie-refine", "true"])
             if row.get("effective_n") is not None:
                 m_cmd.extend(["--effective-n", str(row["effective_n"])])
             if row.get("polyfun_dir"):

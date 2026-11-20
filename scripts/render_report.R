@@ -41,6 +41,17 @@ badge <- function(label, tone = "neutral") {
   sprintf('<span class="badge badge-%s">%s</span>', tone, html_escape(label))
 }
 
+fmt_cs_cell <- function(m_list) {
+  if (is.null(m_list) || length(m_list) == 0L) return("&mdash;")
+  base_str <- fmt_int(m_list$credible_sets)
+  drop_n <- suppressWarnings(as.integer(m_list$unconverged_cs_dropped %||% 0L))
+  if (!is.na(drop_n) && drop_n > 0L) {
+    sprintf('%s <span class="muted">(%d drop)</span>', base_str, drop_n)
+  } else {
+    base_str
+  }
+}
+
 load_rda_object <- function(path, obj_name) {
   if (!file.exists(path)) return(NULL)
   env <- new.env(parent = emptyenv())
@@ -300,8 +311,25 @@ locus_rows_html <- if (length(loci_list) == 0L) {
     if (identical(m_rrss$converged, FALSE)) flags <- c(flags, badge("rRSS-nonconv", "bad"))
     if (identical(m_carma$converged, FALSE)) flags <- c(flags, badge("CARMA-nonconv", "bad"))
     if (identical(m_pf$converged, FALSE)) flags <- c(flags, badge("PolyFun-nonconv", "bad"))
+    if (isTRUE(m_rss$implausible_prior_variance_flag) ||
+        isTRUE(m_rrss$implausible_prior_variance_flag) ||
+        isTRUE(m_pf$implausible_prior_variance_flag)) {
+      flags <- c(flags, badge("V>1-blowup", "bad"))
+    }
+    if (isTRUE(m_rss$credible_sets_suppressed) ||
+        isTRUE(m_rrss$credible_sets_suppressed) ||
+        isTRUE(m_pf$credible_sets_suppressed)) {
+      flags <- c(flags, badge("CS-suppressed", "bad"))
+    }
     if (isTRUE(m_rrss$SER_fallback) || isTRUE(m_rrss$R_reliability_flag)) {
       flags <- c(flags, badge("LD-mismatch", "warn"))
+    }
+    rrss_lb <- suppressWarnings(as.numeric(m_rrss$lambda_bias %||% NA_real_))
+    if (identical(m_rrss$r_mismatch_effective, "eb_mix") && is.finite(rrss_lb) && rrss_lb > 0) {
+      flags <- c(flags, badge("eb_mix", "info"))
+    }
+    if (identical(m_rrss$q_art_eigen, "skipped_large_m")) {
+      flags <- c(flags, badge("Q_art-skip", "neutral"))
     }
     if (!is.null(m_carma$outlier_count) && as.integer(m_carma$outlier_count) > 0L) {
       flags <- c(flags, badge(paste0("CARMA-out:", as.integer(m_carma$outlier_count)), "warn"))
@@ -335,10 +363,10 @@ locus_rows_html <- if (length(loci_list) == 0L) {
       html_escape(loc$lead_variant_id %||% "-"),
       fmt_num(loc$lead_lp, 2L),
       html_escape(pld_str),
-      fmt_int(m_rss$credible_sets),
-      fmt_int(m_rrss$credible_sets),
-      fmt_int(m_carma$credible_sets),
-      fmt_int(m_pf$credible_sets),
+      fmt_cs_cell(m_rss),
+      fmt_cs_cell(m_rrss),
+      fmt_cs_cell(m_carma),
+      fmt_cs_cell(m_pf),
       paste(flags, collapse = " "),
       fmt_num(loc$wall_seconds, 2L)
     )
@@ -401,6 +429,8 @@ if (length(all_reg_ids) > 0L) {
         if (nrow(members) == 0L) next
         top_i <- which.max(members$PIP)
         top_v <- members[top_i, , drop = FALSE]
+        cs_prior_v <- if ("prior_variance_V" %in% names(cs_df)) cs_df$prior_variance_V[[k]] else NA_real_
+        cs_lbf <- if ("lbf" %in% names(cs_df)) cs_df$lbf[[k]] else NA_real_
         cs_rows <- c(
           cs_rows,
           sprintf(
@@ -409,6 +439,8 @@ if (length(all_reg_ids) > 0L) {
               "<td class='mono'>%s</td>",
               "<td>%s</td>",
               "<td class='mono'>%s</td>",
+              "<td class='num'>%s</td>",
+              "<td class='num'>%s</td>",
               "<td class='num'>%s</td>",
               "<td class='num'>%s</td>",
               "<td class='mono'>%s (%s)</td>",
@@ -423,6 +455,8 @@ if (length(all_reg_ids) > 0L) {
             html_escape(cs_id),
             fmt_int(nrow(members)),
             fmt_num(cs_df$min_abs_corr[[k]], 3L),
+            fmt_num(cs_prior_v, 3L),
+            fmt_num(cs_lbf, 2L),
             html_escape(top_v$GWAS_VARIANT_ID[[1L]]),
             html_escape(top_v$ID[[1L]] %||% "."),
             fmt_num(top_v$PIP[[1L]], 3L),
@@ -438,7 +472,7 @@ if (length(all_reg_ids) > 0L) {
 }
 
 cs_table_html <- if (length(cs_rows) == 0L) {
-  '<tr><td colspan="10" class="muted">No 95% credible sets passed purity filtering.</td></tr>'
+  '<tr><td colspan="12" class="muted">No valid 95% credible sets passed convergence, prior-variance, and purity filtering.</td></tr>'
 } else {
   paste(cs_rows, collapse = "\n")
 }
@@ -527,7 +561,7 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; background: rgba(14
   <header>
     <div>
       <h1>%s / %s</h1>
-      <div class="muted">Trait: <strong>%s</strong> &middot; Build: GRCh38 &rarr; Pan-UKB %s (N = %s) &middot; Window: &plusmn;%s Mb merged &middot; MHC: %s</div>
+      <div class="muted">Trait: <strong>%s</strong> &middot; Build: GRCh38 &rarr; Pan-UKB %s (N = %s) &middot; Min MAF: %s &middot; Window: &plusmn;%s Mb merged &middot; MHC: %s</div>
     </div>
     <div>%s</div>
   </header>
@@ -580,7 +614,7 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; background: rgba(14
       <thead>
         <tr>
           <th>Region ID</th><th>Method</th><th>CS</th><th class="num">CS Size</th>
-          <th class="num">Min |r|</th><th>Top Variant (rsID)</th><th class="num">Top PIP</th>
+          <th class="num">Min |r|</th><th class="num">Prior V</th><th class="num">LBF</th><th>Top Variant (rsID)</th><th class="num">Top PIP</th>
           <th class="num">ES (SE)</th><th class="num">LP</th><th class="num">AF</th>
         </tr>
       </thead>
@@ -599,6 +633,7 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; background: rgba(14
   html_escape(prov$trait %||% prov$gwas_id),
   html_escape(prov$ld_population),
   fmt_int(prov$ld_reference_sample_size),
+  fmt_num(prov$min_maf %||% 0, 3L),
   fmt_num((as.numeric(prov$region_flank_bp %||% 1500000)) / 1e6, 2L),
   html_escape(prov$mhc_policy %||% "included_single_region"),
   header_badges,

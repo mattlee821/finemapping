@@ -32,6 +32,7 @@ from run_finemapping import (  # noqa: E402
     REFERENCE_SAMPLES,
     build_analysis_regions,
     chromosome_sort_key,
+    filter_records_by_min_maf,
     format_vcf_region,
     inspect_vcf_tags,
     load_or_init_sidecars,
@@ -128,6 +129,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--reference-sample-size", type=int, default=None)
     p.add_argument("--significance-lp", type=float, default=7.301029995664)
     p.add_argument("--cis-significance-lp", type=float, default=None)
+    p.add_argument("--min-maf", type=float, default=0.01)
     p.add_argument("--region-flank-bp", type=int, default=1_500_000)
     p.add_argument("--gene-window-bp", type=int, default=1_000_000)
     p.add_argument("--max-region-width-bp", type=int, default=9_500_000)
@@ -193,7 +195,8 @@ def screen_gwas(args: argparse.Namespace) -> dict[str, Any]:
     # --- Scan VCF for genome-wide significant variants ------------------------
     t_scan0 = time.monotonic()
     vcf_tags = inspect_vcf_tags(vcf)
-    significant = query_vcf(vcf, minimum_lp=args.significance_lp, vcf_tags=vcf_tags)
+    raw_significant = query_vcf(vcf, minimum_lp=args.significance_lp, vcf_tags=vcf_tags)
+    significant, sig_maf_excluded = filter_records_by_min_maf(raw_significant, args.min_maf)
     significant.sort(key=lambda r: (-r["LP"], chromosome_sort_key(r["CHROM"]), r["POS"]))
     scan_seconds = round(time.monotonic() - t_scan0, 3)
 
@@ -214,6 +217,7 @@ def screen_gwas(args: argparse.Namespace) -> dict[str, Any]:
         max_region_width_bp=args.max_region_width_bp,
         exclude_mhc=args.exclude_mhc,
         gene=gene,
+        min_maf=args.min_maf,
     )
     region_build_seconds = round(time.monotonic() - t_reg0, 3)
 
@@ -249,11 +253,13 @@ def screen_gwas(args: argparse.Namespace) -> dict[str, Any]:
         "gene_window_bp": args.gene_window_bp,
         "significance_lp": args.significance_lp,
         "cis_significance_lp": args.cis_significance_lp,
+        "min_maf": args.min_maf,
         "region_flank_bp": args.region_flank_bp,
         "max_region_width_bp": args.max_region_width_bp,
         "exclude_mhc": args.exclude_mhc,
         "max_loci": args.max_loci,
         "genomewide_significant_variants": len(significant),
+        "significant_variants_removed_min_maf": len(sig_maf_excluded),
         "minimum_variant_ss_over_significant_variants": min_sig_ss,
         "status": "active" if len(selected_regions) > 0 else "no_active_regions",
         "cis_gene": cis_summary,

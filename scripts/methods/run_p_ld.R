@@ -70,17 +70,18 @@ if (allow_skip && (!file.exists(variants_path) || !file.exists(matrix_path))) {
 }
 
 # --- 2. Load gwasfinemapping functions ----------------------------------------
+script_arg <- grep("^--file=", commandArgs(), value = TRUE)
+repo_root <- if (length(script_arg) > 0L) {
+  dirname(dirname(dirname(normalizePath(sub("^--file=", "", script_arg[[1L]])))))
+} else {
+  getwd()
+}
 if (requireNamespace("gwasfinemapping", quietly = TRUE)) {
   library(gwasfinemapping)
-} else {
-  script_arg <- grep("^--file=", commandArgs(), value = TRUE)
-  repo_root <- if (length(script_arg) > 0L) {
-    dirname(dirname(dirname(normalizePath(sub("^--file=", "", script_arg[[1L]])))))
-  } else {
-    getwd()
-  }
-  for (f in list.files(file.path(repo_root, "R"), pattern = "[.]R$", full.names = TRUE)) {
-    source(f)
+}
+if (dir.exists(file.path(repo_root, "R"))) {
+  for (f in sort(list.files(file.path(repo_root, "R"), pattern = "[.]R$", full.names = TRUE))) {
+    source(f, local = FALSE)
   }
 }
 

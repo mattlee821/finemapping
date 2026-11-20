@@ -78,7 +78,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--chain", default=str(DEFAULT_REF_ROOT / "genome/hg38ToHg19.over.chain.gz"))
     p.add_argument("--grch37-fasta", default=str(DEFAULT_REF_ROOT / "genome/GRCh37.fa"))
     p.add_argument("--max-causal", type=int, default=10)
-    p.add_argument("--max-iter", type=int, default=50)
+    p.add_argument("--max-iter", type=int, default=100)
+    p.add_argument("--cis-max-iter", type=int, default=200)
+    p.add_argument("--min-maf", type=float, default=0.01)
     p.add_argument("--effective-n", type=float, default=None)
     p.add_argument("--report", default="true")
     p.add_argument("--keep-intermediates", action="store_true")
@@ -101,8 +103,13 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
     methods = parse_methods_list(args.methods)
 
     output_dir = Path(args.output_root).expanduser().resolve() / study_id / gwas_id
+    loci_root = Path(args.loci_dir).expanduser().resolve() if args.loci_dir else None
+    keep_names = {"logs"}
+    if args.keep_intermediates or (loci_root is not None and loci_root.parent == output_dir):
+        keep_names.add("loci")
+
     existing_non_logs = (
-        [p for p in output_dir.iterdir() if p.name != "logs"]
+        [p for p in output_dir.iterdir() if p.name not in keep_names]
         if output_dir.exists()
         else []
     )
@@ -117,7 +124,6 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
             raise FileExistsError(f"Output directory is not empty: {output_dir} (pass --force)")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    loci_root = Path(args.loci_dir).expanduser().resolve() if args.loci_dir else None
     selected_regions = screen.get("selected_regions") or []
 
     step_telemetry: list[dict[str, Any]] = []
@@ -250,6 +256,16 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
             if m in r.get("methods", {})
         )
     ]
+    suppressed_cs_regions = [
+        r["region_id"]
+        for r in analyzed_loci
+        if r.get("status") == "analyzed"
+        and any(
+            r.get("methods", {}).get(m, {}).get("credible_sets_suppressed") is True
+            for m in ("susie_rss", "susie_rrss", "polyfun")
+            if m in r.get("methods", {})
+        )
+    ]
     mismatch_flagged = [
         r["region_id"]
         for r in analyzed_loci
@@ -268,7 +284,7 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
             if int(screen.get("candidate_regions_total", 0)) == 0
             else "NO_PANEL_MATCHED_LOCI"
         )
-    elif nonconverged or mismatch_flagged:
+    elif nonconverged or suppressed_cs_regions or mismatch_flagged:
         overall_status = "WARN_DIAGNOSTIC_FLAGS"
     else:
         overall_status = "PASS"
@@ -301,6 +317,7 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
         "significance_threshold_p": 10 ** (-sig_lp),
         "significance_threshold_lp": sig_lp,
         "cis_significance_threshold_lp": cis_sig_lp if cis_sig_lp is not None else sig_lp,
+        "min_maf": float(screen.get("min_maf", args.min_maf)),
         "fine_mapping_window_definition": "kanai_greedy_lead_plus_minus_flank_merged",
         "region_flank_bp": flank_bp,
         "nominal_locus_window_bp": 2 * flank_bp,
@@ -312,6 +329,7 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
         "max_loci": screen.get("max_loci", 0),
         "max_causal_L": args.max_causal,
         "max_iter": args.max_iter,
+        "cis_max_iter": args.cis_max_iter,
         "effective_n_override": args.effective_n,
         "keep_intermediates": args.keep_intermediates,
         "fine_mapping_methods": methods,
@@ -327,6 +345,8 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
         "ancestry_ld_status": screen["ancestry_ld_status"],
         "upstream_qc": qc_upstream,
         "genomewide_significant_variants": screen["genomewide_significant_variants"],
+        "significant_variants_removed_min_maf": screen.get("significant_variants_removed_min_maf", 0),
+        "total_variants_removed_min_maf": sum(int(r.get("variants_removed_min_maf") or 0) for r in analyzed_loci),
         "minimum_variant_ss_over_significant_variants": screen.get(
             "minimum_variant_ss_over_significant_variants"
         ),
@@ -338,6 +358,7 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
         "total_credible_sets_carma": total_cs_carma,
         "total_credible_sets_polyfun": total_cs_polyfun,
         "nonconverged_regions": nonconverged,
+        "suppressed_credible_set_regions": suppressed_cs_regions,
         "mismatch_flagged_regions": mismatch_flagged,
         "cis_gene": screen.get("cis_gene"),
         "mhc": screen.get("mhc"),

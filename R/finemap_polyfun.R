@@ -226,7 +226,7 @@ run_polyfun_susie <- function(variants, R, prior_weights = NULL,
                               missing_prior_policy = c("baseline_floor", "drop", "error"),
                               effective_n = NULL, L = 10L,
                               coverage = 0.95, min_abs_corr = 0.5,
-                              max_iter = 50L, refine = FALSE,
+                              max_iter = 100L, refine = FALSE,
                               psd_max_variants = 5000L,
                               allow_missing_n = FALSE) {
   missing_prior_policy <- match.arg(missing_prior_policy)
@@ -262,6 +262,8 @@ run_polyfun_susie <- function(variants, R, prior_weights = NULL,
         credible_set_id = character(), effect_index = integer(),
         size = integer(), coverage = numeric(), min_abs_corr = numeric(),
         mean_abs_corr = numeric(), median_abs_corr = numeric(),
+        prior_variance_V = numeric(), lbf = numeric(),
+        ld_mismatch_warning = logical(),
         stringsAsFactors = FALSE
       ),
       credible_set_membership = data.frame(

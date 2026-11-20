@@ -102,3 +102,88 @@ test_that("SuSiE handles a one-variant locus and rejects an empty locus", {
                      dimnames = list(character(), character()))
   expect_error(run_susie_rss(empty, empty_ld), "no variants")
 })
+
+test_that("SuSiE-rRSS keeps eb_mix active above eigen_max_variants while skipping Q_art eigen", {
+  fixture <- susie_fixture(z = c(8.5, 7.9, 0.4, -0.2, 0.1))
+  res <- run_susie_rrss(
+    fixture$variants,
+    fixture$R,
+    reference_sample_size = 500,
+    L = 3,
+    max_iter = 50,
+    min_abs_corr = NULL,
+    eigen_max_variants = 2L
+  )
+
+  expect_equal(res$provenance$parameters$R_mismatch, "eb_mix")
+  expect_equal(res$diagnostics$r_mismatch_requested, "eb_mix")
+  expect_equal(res$diagnostics$r_mismatch_effective, "eb_mix")
+  expect_equal(res$diagnostics$q_art_eigen, "skipped_large_m")
+  expect_false(isTRUE(res$diagnostics$artifact_evaluable))
+  expect_true(all(c("prior_variance_V", "lbf", "ld_mismatch_warning") %in%
+                    names(res$credible_sets)))
+  expect_true(all(c("initial_elbo", "final_elbo", "final_elbo_change",
+                    "max_prior_variance_V", "max_lbf") %in%
+                    names(res$diagnostics)))
+})
+
+test_that("Two-tier CS validity gate suppresses non-converged and V > 1 blow-up credible sets", {
+  # 1. Force non-convergence with max_iter = 1 on a multi-signal locus
+  variants <- data.frame(
+    CHROM = rep("1", 6),
+    POS = 200:205,
+    REF = rep("A", 6),
+    ALT = rep("G", 6),
+    EZ = c(9.5, 9.1, 0.2, 8.4, 8.0, -0.1),
+    LP = c(20, 19, 0.5, 16, 15, 0.3),
+    SS = rep(5000, 6)
+  )
+  ids <- paste(variants$CHROM, variants$POS, variants$REF, variants$ALT, sep = ":")
+  R <- diag(6)
+  R[1, 2] <- R[2, 1] <- 0.95
+  R[4, 5] <- R[5, 4] <- 0.95
+  R[1, 4] <- R[4, 1] <- 0.25
+  R[1, 5] <- R[5, 1] <- 0.25
+  R[2, 4] <- R[4, 2] <- 0.25
+  R[2, 5] <- R[5, 2] <- 0.25
+  dimnames(R) <- list(ids, ids)
+
+  nonconv <- suppressWarnings(run_susie_rss(
+    variants,
+    R,
+    L = 4,
+    max_iter = 1L,
+    min_abs_corr = 0.5
+  ))
+  expect_false(nonconv$diagnostics$converged)
+  expect_true(nonconv$diagnostics$credible_sets_suppressed)
+  expect_equal(nonconv$diagnostics$credible_sets_suppressed_reason, "non_converged")
+  expect_gte(nonconv$diagnostics$unconverged_cs_dropped, 1L)
+  expect_equal(nrow(nonconv$credible_sets), 0L)
+  expect_equal(nrow(nonconv$credible_set_membership), 0L)
+  expect_true(all(is.na(nonconv$variants$credible_set_id)))
+  expect_null(nonconv$fit$sets$cs)
+
+  # 2. Opposite-sign collinear cancellation blow-up (V > 1 on standardized summary stats)
+  variants_blow <- variants
+  variants_blow$EZ <- c(45, -45, 0.1, 0.0, -0.1, 0.05)
+  variants_blow$SS <- rep(500, 6)
+  R_blow <- diag(6)
+  R_blow[1, 2] <- R_blow[2, 1] <- 0.998
+  dimnames(R_blow) <- list(ids, ids)
+
+  blow <- suppressWarnings(run_susie_rss(
+    variants_blow,
+    R_blow,
+    L = 4,
+    max_iter = 100L,
+    min_abs_corr = 0.5
+  ))
+  if (is.finite(blow$diagnostics$max_cs_prior_variance_V) &&
+      blow$diagnostics$max_cs_prior_variance_V > 1.0) {
+    expect_true(blow$diagnostics$implausible_prior_variance_flag)
+    expect_true(blow$diagnostics$credible_sets_suppressed)
+    expect_equal(nrow(blow$credible_sets), 0L)
+    expect_null(blow$fit$sets$cs)
+  }
+})

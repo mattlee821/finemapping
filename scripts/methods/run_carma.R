@@ -65,7 +65,7 @@ if (length(cli_args) > 0L) {
     else if (flag == "--min-abs-corr")    min_abs_corr  <- as.numeric(val)
     else if (flag == "--outlier-switch")  outlier_switch <- tolower(val) %in% c("true", "1", "yes")
     else if (flag == "--seed")            seed          <- as.integer(val)
-    else if (flag %in% c("--max-iter", "--reference-sample-size", "--effective-n")) {
+    else if (flag %in% c("--max-iter", "--susie-refine", "--reference-sample-size", "--effective-n")) {
       # Accepted so Nextflow can invoke all Bayesian method scripts uniformly
     }
     else if (flag == "--out-rds")         out_rds       <- val
@@ -86,18 +86,18 @@ if (allow_skip && (!file.exists(variants_path) || !file.exists(matrix_path))) {
 }
 
 # --- 2. Load gwasfinemapping functions ----------------------------------------
-if (requireNamespace("gwasfinemapping", quietly = TRUE) &&
-    exists("run_carma", where = asNamespace("gwasfinemapping"), mode = "function")) {
-  library(gwasfinemapping)
+script_arg <- grep("^--file=", commandArgs(), value = TRUE)
+repo_root <- if (length(script_arg) > 0L) {
+  dirname(dirname(dirname(normalizePath(sub("^--file=", "", script_arg[[1L]])))))
 } else {
-  script_arg <- grep("^--file=", commandArgs(), value = TRUE)
-  repo_root <- if (length(script_arg) > 0L) {
-    dirname(dirname(dirname(normalizePath(sub("^--file=", "", script_arg[[1L]])))))
-  } else {
-    getwd()
-  }
-  for (f in list.files(file.path(repo_root, "R"), pattern = "[.]R$", full.names = TRUE)) {
-    source(f)
+  getwd()
+}
+if (requireNamespace("gwasfinemapping", quietly = TRUE)) {
+  library(gwasfinemapping)
+}
+if (dir.exists(file.path(repo_root, "R"))) {
+  for (f in sort(list.files(file.path(repo_root, "R"), pattern = "[.]R$", full.names = TRUE))) {
+    source(f, local = FALSE)
   }
 }
 

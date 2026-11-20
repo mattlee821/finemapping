@@ -221,6 +221,7 @@ def preflight_row(
     raw: dict[str, Any],
     ld_population: str,
     allow_ancestry_mismatch: bool,
+    min_maf: float = 0.01,
 ) -> tuple[dict[str, Any] | None, list[str]]:
     errors: list[str] = []
     vcf_str = (raw.get("vcf") or "").strip()
@@ -306,11 +307,14 @@ def preflight_row(
     try:
         with gzip.open(vcf, "rt", encoding="utf-8", errors="replace") as gz:
             saw_chrom = False
+            saw_fmt_af = False
             for line in gz:
                 if line.startswith("##reference="):
                     ref_b = normalized_build(line.split("=", 1)[1].strip())
                     if ref_b and ref_b != "GRCh38":
                         errors.append(f"VCF ##reference is {ref_b} (expected GRCh38)")
+                elif line.startswith("##FORMAT=<ID=AF,") or line.startswith("##FORMAT=<ID=AF>"):
+                    saw_fmt_af = True
                 elif line.startswith("#CHROM\t"):
                     saw_chrom = True
                     break
@@ -318,6 +322,8 @@ def preflight_row(
                     break
             if not saw_chrom:
                 errors.append("VCF missing #CHROM header line")
+            if float(min_maf or 0.0) > 0.0 and not saw_fmt_af:
+                errors.append("VCF lacks FORMAT/AF required for --min-maf > 0 (pass --min-maf 0 to disable)")
     except OSError as exc:
         errors.append(f"cannot read gzipped VCF header: {exc}")
 
@@ -381,6 +387,9 @@ def compute_settings_hash(row: dict[str, Any], params: dict[str, Any]) -> str:
         "max_loci": int(params["max_loci"]),
         "max_causal": int(params["max_causal"]),
         "max_iter": int(params["max_iter"]),
+        "cis_max_iter": int(params.get("cis_max_iter", 200)),
+        "min_maf": round(float(params.get("min_maf", 0.01)), 8),
+        "susie_refine": bool(params.get("susie_refine", False)),
         "effective_n": params.get("effective_n"),
         "reference_sample_size": params.get("reference_sample_size"),
     }
@@ -398,7 +407,7 @@ def load_state(state_file: Path) -> dict[str, dict[str, str]]:
 def outputs_are_complete(outdir: Path, study_id: str, gwas_id: str,
                          settings_hash: str, state: dict[str, dict[str, str]],
                          require_report: bool, methods: list[str],
-                         output_format: str) -> bool:
+                         output_format: str, keep_intermediates: bool = False) -> bool:
     gdir = outdir / study_id / gwas_id
     if not (gdir / "qc.json").is_file() or not (gdir / "provenance.json").is_file():
         return False
@@ -412,6 +421,8 @@ def outputs_are_complete(outdir: Path, study_id: str, gwas_id: str,
         return False
     rec = state.get(f"{study_id}/{gwas_id}")
     if rec and rec.get("settings_hash") == settings_hash and rec.get("status") in ("PASS", "WARN_DIAGNOSTIC_FLAGS", "NO_SIGNIFICANT_LOCI", "NO_PANEL_MATCHED_LOCI"):
+        if keep_intermediates and int(rec.get("analyzed_regions", 0) or 0) > 0 and not (gdir / "loci").is_dir():
+            return False
         return True
     return False
 
@@ -483,11 +494,15 @@ def cmd_prepare(args: argparse.Namespace) -> int:
     if out_fmt not in ("rda", "rds", "both"):
         raise ValueError(f"Unsupported --output-format '{out_fmt}'")
 
+    if args.min_maf < 0.0 or args.min_maf >= 0.5:
+        raise ValueError(f"--min-maf must be in [0.0, 0.5), got {args.min_maf}")
+
     params = {
         "methods": methods_list,
         "output_format": out_fmt,
         "significance_lp": args.significance_lp,
         "cis_significance_lp": args.cis_significance_lp,
+        "min_maf": args.min_maf,
         "region_flank_bp": args.region_flank_bp,
         "max_region_width_bp": args.max_region_width_bp,
         "gene_window_bp": args.gene_window_bp,
@@ -495,6 +510,8 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         "max_loci": args.max_loci,
         "max_causal": args.max_causal,
         "max_iter": args.max_iter,
+        "cis_max_iter": args.cis_max_iter,
+        "susie_refine": args.susie_refine,
         "effective_n": args.effective_n,
         "reference_sample_size": args.reference_sample_size,
     }
@@ -510,6 +527,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
             raw=raw,
             ld_population=args.population,
             allow_ancestry_mismatch=args.allow_ancestry_mismatch,
+            min_maf=args.min_maf,
         )
         if errs:
             invalid.append({
@@ -537,7 +555,7 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         checked["settings_hash"] = shash
         if not args.force and outputs_are_complete(
             outdir, checked["study_id"], checked["gwas_id"], shash, state,
-            args.report, methods_list, out_fmt
+            args.report, methods_list, out_fmt, args.keep_intermediates
         ):
             skipped_complete += 1
             continue
@@ -561,7 +579,10 @@ def cmd_prepare(args: argparse.Namespace) -> int:
             row["row_id"] = row_id
             writer.writerow(row)
             if not args.dry_run:
-                row_log_dir = outdir / row["study_id"] / row["gwas_id"] / "logs"
+                row_gwas_dir = outdir / row["study_id"] / row["gwas_id"]
+                if args.force and (row_gwas_dir / "loci").is_dir():
+                    shutil.rmtree(row_gwas_dir / "loci", ignore_errors=True)
+                row_log_dir = row_gwas_dir / "logs"
                 if row_log_dir.is_dir():
                     stale_prefixes = ("01_", "02_", "03_", "04_") if args.force else ("01_", "04_")
                     for stale in row_log_dir.iterdir():
@@ -800,13 +821,16 @@ def main() -> int:
     p_prep.add_argument("--effective-n", type=float)
     p_prep.add_argument("--significance-lp", type=float, default=7.301029995664)
     p_prep.add_argument("--cis-significance-lp", type=float)
+    p_prep.add_argument("--min-maf", type=float, default=0.01)
     p_prep.add_argument("--region-flank-bp", type=int, default=1_500_000)
     p_prep.add_argument("--max-region-width-bp", type=int, default=9_500_000)
     p_prep.add_argument("--gene-window-bp", type=int, default=1_000_000)
     p_prep.add_argument("--exclude-mhc", type=str2bool, default=False)
     p_prep.add_argument("--max-loci", type=int, default=0)
     p_prep.add_argument("--max-causal", type=int, default=10)
-    p_prep.add_argument("--max-iter", type=int, default=50)
+    p_prep.add_argument("--max-iter", type=int, default=100)
+    p_prep.add_argument("--cis-max-iter", type=int, default=200)
+    p_prep.add_argument("--susie-refine", type=str2bool, default=False)
     p_prep.add_argument("--row-limit", type=int, default=0)
     p_prep.add_argument("--force", type=str2bool, default=False)
     p_prep.add_argument("--dry-run", type=str2bool, default=False)

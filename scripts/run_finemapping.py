@@ -162,6 +162,28 @@ def estimate_case_control_effective_n(
     return round(float(statistics.median(ests)), 2)
 
 
+def filter_records_by_min_maf(
+    records: list[dict[str, Any]],
+    min_maf: float,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Filter GWAS records to minor allele frequency min(AF, 1 - AF) >= min_maf."""
+    thresh = float(min_maf or 0.0)
+    if thresh <= 0.0:
+        return records, []
+    kept: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    for rec in records:
+        af = rec.get("AF")
+        if af is None or not math.isfinite(af) or af < 0.0 or af > 1.0:
+            excluded.append({**rec, "status": "excluded", "reason": "missing_af_for_min_maf"})
+            continue
+        if min(af, 1.0 - af) < thresh:
+            excluded.append({**rec, "status": "excluded", "reason": "below_min_maf"})
+            continue
+        kept.append(rec)
+    return kept, excluded
+
+
 def inspect_vcf_tags(vcf: Path) -> dict[str, Any]:
     result = subprocess.run(
         ["bcftools", "view", "-h", str(vcf)],
@@ -190,7 +212,8 @@ def format_vcf_region(vcf_tags: dict[str, Any] | None, chrom: str,
 
 def query_vcf(vcf: Path, region: str | None = None,
               minimum_lp: float | None = None,
-              vcf_tags: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+              vcf_tags: dict[str, Any] | None = None,
+              min_maf: float = 0.0) -> list[dict[str, Any]]:
     if vcf_tags is None:
         vcf_tags = inspect_vcf_tags(vcf)
     fmt = CORE_QUERY_FORMAT
@@ -277,6 +300,8 @@ def query_vcf(vcf: Path, region: str | None = None,
         if est_neff is not None:
             for r in records:
                 r["SS"] = est_neff
+    if min_maf and float(min_maf) > 0.0:
+        records, _ = filter_records_by_min_maf(records, float(min_maf))
     return records
 
 
@@ -494,7 +519,7 @@ def greedy_kanai_windows(
 
 def build_analysis_regions(
     vcf: Path,
-    vcf_tags: dict[str, bool],
+    vcf_tags: dict[str, Any],
     significant: list[dict[str, Any]],
     lifter: Any,
     significance_lp: float,
@@ -505,6 +530,7 @@ def build_analysis_regions(
     exclude_mhc: bool,
     gene: dict[str, Any] | None,
     mhc_bounds: tuple[int, int] = (MHC_START_GRCH38, MHC_END_GRCH38),
+    min_maf: float = 0.0,
 ) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
     """Construct the deduplicated list of regions to analyze (`cis_gene`, `mhc`, `lead_locus`)
     and structured QC summaries for `cis_gene` and `mhc`."""
@@ -539,6 +565,7 @@ def build_analysis_regions(
                 region=format_vcf_region(vcf_tags, MHC_CHROM, mhc_start, mhc_end),
                 minimum_lp=cis_gate_lp,
                 vcf_tags=vcf_tags,
+                min_maf=min_maf,
             )
             max_cis_lp = max((r["LP"] for r in cis_in_mhc if r["LP"] is not None), default=None)
             if exclude_mhc:
@@ -586,6 +613,7 @@ def build_analysis_regions(
                     region=format_vcf_region(vcf_tags, g_chrom, cis_start, cis_end),
                     minimum_lp=cis_gate_lp,
                     vcf_tags=vcf_tags,
+                    min_maf=min_maf,
                 )
             )
             if cis_hits:
@@ -626,6 +654,7 @@ def build_analysis_regions(
                     vcf,
                     region=format_vcf_region(vcf_tags, g_chrom, cis_start, cis_end),
                     vcf_tags=vcf_tags,
+                    min_maf=min_maf,
                 )
                 max_cis_lp = max((r["LP"] for r in cis_all if r["LP"] is not None), default=None)
                 cis_summary = {

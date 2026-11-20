@@ -599,6 +599,170 @@ class LocusWorkerScratchTests(unittest.TestCase):
             got_f = prep_locus._apply_flips_inplace(got.copy(), flips)
             np.testing.assert_allclose(got_f, ref_f, rtol=0, atol=1e-15)
 
+    def test_min_maf_filtering_cis_max_iter_and_keep_intermediates_finalise(self) -> None:
+        import json
+        import tempfile
+        from unittest import mock
+        import finalise_gwas
+        import run_finemapping
+
+        # 1. Verify true MAF = min(AF, 1 - AF) filtering at 1%
+        records = [
+            {"ID": "ultra_rare_alt", "AF": 0.0005, "LP": 50.0},
+            {"ID": "ultra_rare_ref", "AF": 0.9995, "LP": 40.0},
+            {"ID": "missing_af", "AF": None, "LP": 30.0},
+            {"ID": "boundary_low", "AF": 0.01, "LP": 12.0},
+            {"ID": "common", "AF": 0.35, "LP": 1592.0},
+            {"ID": "boundary_high", "AF": 0.99, "LP": 9.0},
+        ]
+        kept, removed = run_finemapping.filter_records_by_min_maf(records, 0.01)
+        self.assertEqual(len(removed), 3)
+        self.assertEqual([r["ID"] for r in kept], ["boundary_low", "common", "boundary_high"])
+        kept_zero, removed_zero = run_finemapping.filter_records_by_min_maf(records, 0.0)
+        self.assertEqual(len(removed_zero), 0)
+        self.assertEqual(len(kept_zero), 6)
+
+        # 2. Verify locus_worker passes --min-maf and selects cis_max_iter (200) vs max_iter (100)
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            scratch_root = base / "scratch"
+            outdir = base / "finemapping"
+            row = {
+                "study_id": "sun_2023_37794186",
+                "gwas_id": "P39900_OID21439",
+                "settings_hash": "1234567890abcdef",
+                "outdir": str(outdir),
+                "methods": ["p_ld", "susie_rrss"],
+                "min_maf": 0.01,
+                "max_iter": 100,
+                "cis_max_iter": 200,
+                "susie_refine": False,
+                "force": False,
+                "keep_intermediates": True,
+                "chain": "/tmp/chain",
+                "grch37_fasta": "/tmp/fa",
+                "cache_dir": "/tmp/cache",
+            }
+            row_json = base / "row.json"
+            row_json.write_text(json.dumps(row), encoding="utf-8")
+            screen_json = base / "screen.json"
+            reg_id = "cis_MMP12_chr11_101862736_103874982"
+            screen_json.write_text(
+                json.dumps({
+                    "study_id": "sun_2023_37794186",
+                    "gwas_id": "P39900_OID21439",
+                    "population": "EUR",
+                    "ancestry_ld_status": "multi_ancestry_gwas_single_panel_ld",
+                    "reference_sample_size": 420542,
+                    "significance_lp": 1000.0,
+                    "cis_significance_lp": 7.30103,
+                    "min_maf": 0.01,
+                    "region_flank_bp": 1500000,
+                    "genomewide_significant_variants": 1,
+                    "candidate_regions_total": 1,
+                    "selected_regions_count": 1,
+                    "selected_regions": [
+                        {"region_id": reg_id, "region_type": "cis_gene", "vcf_variants_in_region": 7000}
+                    ],
+                }),
+                encoding="utf-8",
+            )
+
+            recorded_cmds: list[list[str]] = []
+
+            def fake_run(cmd: list[str], step_stem: str, gwas_log_dir: Path, sub_env: dict[str, str]) -> None:
+                recorded_cmds.append(cmd)
+                if "prep_locus.py" in " ".join(cmd):
+                    wd = Path(cmd[cmd.index("--outdir") + 1])
+                    wd.mkdir(parents=True, exist_ok=True)
+                    (wd / "locus_prep_qc.json").write_text(
+                        json.dumps({
+                            "region_id": reg_id,
+                            "region_type": "cis_gene",
+                            "status": "prepared",
+                            "variants_in_source_region": 15488,
+                            "variants_removed_min_maf": 8488,
+                            "variants_ld_matched": 7000,
+                        }),
+                        encoding="utf-8",
+                    )
+                    (wd / "matched_variants.tsv").write_text("GWAS_VARIANT_ID\n11:102877965:A:G\n", encoding="utf-8")
+                    (wd / "matrix.ids.txt").write_text("11:102748712:A:G\n", encoding="utf-8")
+                    (wd / "matrix.npy").write_bytes(b"NPYDATA")
+                elif "run_all_methods.R" in " ".join(cmd):
+                    mdir = Path(cmd[cmd.index("--out-methods-dir") + 1])
+                    for m in ("p_ld", "susie_rrss"):
+                        (mdir / m).mkdir(parents=True, exist_ok=True)
+                        (mdir / m / "region_result.rds").write_bytes(b"RDS")
+                        (mdir / m / "method_qc.json").write_text(
+                            json.dumps({
+                                "method_id": m,
+                                "converged": True,
+                                "credible_sets": 2 if m == "susie_rrss" else 0,
+                            }),
+                            encoding="utf-8",
+                        )
+
+            out_root_file = base / ".out_root"
+            w_args = locus_worker.parse_args([
+                "--project-dir", str(SCRIPTS_DIR.parent),
+                "--row-json", str(row_json),
+                "--screen-json", str(screen_json),
+                "--locus-index", "0",
+                "--region-id", reg_id,
+                "--region-type", "cis_gene",
+                "--scratch-root", str(scratch_root),
+                "--out-root-file", str(out_root_file),
+            ])
+            with mock.patch("locus_worker._run_and_log", side_effect=fake_run):
+                rc = locus_worker.run_locus_worker(w_args)
+            self.assertEqual(rc, 0)
+            self.assertEqual(len(recorded_cmds), 2)
+            prep_cmd, r_cmd = recorded_cmds
+            self.assertEqual(prep_cmd[prep_cmd.index("--min-maf") + 1], "0.01")
+            self.assertEqual(r_cmd[r_cmd.index("--max-iter") + 1], "200")
+            self.assertEqual(r_cmd[r_cmd.index("--unlink-matrix") + 1], "false")
+
+            kept_loci_root = Path(out_root_file.read_text(encoding="utf-8"))
+            kept_loc_dir = kept_loci_root / reg_id
+            self.assertEqual(kept_loci_root, outdir / "sun_2023_37794186" / "P39900_OID21439" / "loci")
+            self.assertTrue((kept_loc_dir / "matrix.npy").is_file())
+            self.assertTrue((kept_loc_dir / "matrix.ids.txt").is_file())
+            self.assertTrue((kept_loc_dir / "matched_variants.tsv").is_file())
+
+            # 3. Verify finalise_gwas with --keep-intermediates and --force preserves output_dir/loci!
+            stale_file = outdir / "sun_2023_37794186" / "P39900_OID21439" / "stale.txt"
+            stale_file.write_text("old", encoding="utf-8")
+            f_args = finalise_gwas.parse_args([
+                "--screen-json", str(screen_json),
+                "--loci-dir", str(kept_loci_root),
+                "--output-root", str(outdir),
+                "--methods", "p_ld,susie_rrss",
+                "--min-maf", "0.01",
+                "--max-iter", "100",
+                "--cis-max-iter", "200",
+                "--keep-intermediates",
+                "--report", "false",
+                "--force",
+            ])
+            with mock.patch("finalise_gwas.run_checked"):
+                out_gwas_dir = finalise_gwas.finalise_gwas(f_args)
+            self.assertEqual(out_gwas_dir.resolve(), (outdir / "sun_2023_37794186" / "P39900_OID21439").resolve())
+            self.assertFalse(stale_file.exists())
+            self.assertTrue((kept_loc_dir / "matrix.npy").is_file())
+            self.assertTrue((kept_loc_dir / "matrix.ids.txt").is_file())
+            self.assertTrue((kept_loc_dir / "matched_variants.tsv").is_file())
+            prov = json.loads(
+                (outdir / "sun_2023_37794186" / "P39900_OID21439" / "provenance.json").read_text(encoding="utf-8")
+            )
+            qc_out = json.loads(
+                (outdir / "sun_2023_37794186" / "P39900_OID21439" / "qc.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(prov["min_maf"], 0.01)
+            self.assertEqual(prov["max_iter"], 100)
+            self.assertEqual(prov["cis_max_iter"], 200)
+            self.assertEqual(qc_out["total_variants_removed_min_maf"], 8488)
+
 
 if __name__ == "__main__":
     unittest.main()
