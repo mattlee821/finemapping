@@ -406,15 +406,20 @@ if invalid:
     for item in invalid:
         print(f"    - {item.get('study_id')}/{item.get('gwas_id')}: {'; '.join(item.get('errors', []))}")
 if not dry_run:
-    print(f"  Completed this run:     {upd.get('updated', 0)}")
+    rows_expected = int(prep.get("rows_to_run", 0) or 0)
+    updated_n = int(upd.get("updated", 0) or 0)
+    unaccounted_n = max(0, rows_expected - updated_n - len(failed_rows))
+    print(f"  Completed this run:     {updated_n}")
     if failed_rows:
         print(f"  Failed during run:      {len(failed_rows)}")
         for fr in failed_rows:
             print(f"    - {fr.get('row_key')}: {fr.get('error')}")
-    if prep.get("rows_to_run", 0) == 0 and prep.get("rows_skipped_complete", 0) > 0 and not invalid:
+    if unaccounted_n > 0:
+        print(f"  Failed upstream (screen/task): {unaccounted_n}")
+    if rows_expected == 0 and prep.get("rows_skipped_complete", 0) > 0 and not invalid:
         print("  All selected rows are already complete for current settings (use --force to re-run).")
 
-if (invalid or failed_rows) and not dry_run:
+if (invalid or failed_rows or (not dry_run and unaccounted_n > 0)) and not dry_run:
     raise SystemExit(1)
 PY
 

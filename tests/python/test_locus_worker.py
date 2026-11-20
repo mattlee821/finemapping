@@ -494,6 +494,52 @@ class LocusWorkerScratchTests(unittest.TestCase):
             for m in ("p_ld", "carma", "susie_rss", "susie_rrss"):
                 self.assertTrue((loc_dir / "methods" / m / "region_result.rds").is_file())
 
+    def test_case_control_vcf_header_sample_size_without_format_ss(self) -> None:
+        import run_finemapping
+
+        sample_hdr = (
+            '##FORMAT=<ID=ES,Number=A,Type=Float,Description="Effect">\n'
+            '##FORMAT=<ID=SE,Number=A,Type=Float,Description="SE">\n'
+            '##FORMAT=<ID=LP,Number=A,Type=Float,Description="-log10P">\n'
+            '##FORMAT=<ID=AF,Number=A,Type=Float,Description="AF">\n'
+            '##SAMPLE=<ID=GECCO_colon_all_noUKB,TotalVariants=14131476,TotalControls=38626,'
+            'TotalCases=27817,StudyType=CaseControl,Phenotype="colon cancer, both sexes",Ancestry=ALL>\n'
+        )
+        parsed = run_finemapping._parse_vcf_sample_header(sample_hdr)
+        self.assertEqual(parsed["SAMPLE_STUDY_TYPE"], "CaseControl")
+        self.assertEqual(parsed["SAMPLE_TOTAL_CASES"], 27817)
+        self.assertEqual(parsed["SAMPLE_TOTAL_CONTROLS"], 38626)
+        expected_neff = round(4.0 / (1.0 / 27817.0 + 1.0 / 38626.0), 2)
+        self.assertEqual(parsed["HEADER_EFFECTIVE_N"], expected_neff)
+        self.assertEqual(parsed["HEADER_EFFECTIVE_N_SOURCE"], "vcf_sample_header_neff_4_ncases_ncontrols")
+
+        import shutil
+        import subprocess
+        import tempfile
+        if shutil.which("bcftools"):
+            with tempfile.TemporaryDirectory() as td:
+                vcf_txt = Path(td) / "cc.vcf"
+                vcf_gz = Path(td) / "cc.vcf.gz"
+                vcf_txt.write_text(
+                    "##fileformat=VCFv4.2\n"
+                    "##contig=<ID=1,length=248956422>\n"
+                    + sample_hdr
+                    + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tGECCO_colon_all_noUKB\n"
+                    + "1\t1000\trs1\tA\tG\t.\t.\t.\tES:SE:LP:AF\t0.12:0.02:8.95:0.35\n",
+                    encoding="utf-8",
+                )
+                subprocess.run(["bcftools", "view", "-Oz", "-o", str(vcf_gz), str(vcf_txt)], check=True)
+                subprocess.run(["bcftools", "index", "-t", str(vcf_gz)], check=True)
+                tags = run_finemapping.inspect_vcf_tags(vcf_gz)
+                self.assertFalse(tags["FORMAT_SS"])
+                self.assertEqual(tags["HEADER_EFFECTIVE_N"], expected_neff)
+                recs_scan = run_finemapping.query_vcf(vcf_gz, minimum_lp=7.3, vcf_tags=tags)
+                recs_reg = run_finemapping.query_vcf(vcf_gz, region="1:500-1500", vcf_tags=tags)
+                self.assertEqual(len(recs_scan), 1)
+                self.assertEqual(len(recs_reg), 1)
+                self.assertEqual(recs_scan[0]["SS"], expected_neff)
+                self.assertEqual(recs_reg[0]["SS"], expected_neff)
+
 
 if __name__ == "__main__":
     unittest.main()

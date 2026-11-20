@@ -21,10 +21,11 @@ from pathlib import Path
 from typing import Any
 
 
-BASE_QUERY_FORMAT = (
+CORE_QUERY_FORMAT = (
     "%CHROM\\t%POS\\t%ID\\t%REF\\t%ALT\\t"
-    "[%LP{0}]\\t[%ES{0}]\\t[%SE{0}]\\t[%SS{0}]"
+    "[%LP{0}]\\t[%ES{0}]\\t[%SE{0}]"
 )
+BASE_QUERY_FORMAT = CORE_QUERY_FORMAT + "\\t[%SS{0}]"
 METHODS = "p_ld,susie_rss,susie_rrss"
 
 # Exact sample sizes verified from s3://pan-ukb-us-east-1/ld_release/UKBB.<POP>.ldadj.variant.ht/globals
@@ -97,7 +98,49 @@ def is_mhc_core_grc_grch38(chrom: str, pos: int) -> bool:
     )
 
 
-def inspect_vcf_tags(vcf: Path) -> dict[str, bool]:
+def _parse_vcf_sample_header(header: str) -> dict[str, Any]:
+    """Extract study-level sample size / case-control counts from GWAS-VCF ##SAMPLE=<...>."""
+    m = re.search(r"^##SAMPLE=<(.+)>$", header, re.M)
+    if not m:
+        return {}
+    attrs: dict[str, str] = {}
+    for k, v in re.findall(r'([A-Za-z0-9_]+)=("[^"]*"|[^,>]+)', m.group(1)):
+        attrs[k] = v.strip('"').strip()
+
+    def _pos_float(*keys: str) -> float | None:
+        for key in keys:
+            val = numeric(attrs.get(key))
+            if val is not None and val > 0:
+                return val
+        return None
+
+    n_cases = _pos_float("TotalCases", "NCases", "Cases")
+    n_controls = _pos_float("TotalControls", "NControls", "Controls")
+    n_total = _pos_float("TotalSampleSize", "SampleSize", "TotalN", "N")
+
+    eff_n: float | None = None
+    eff_source: str | None = None
+    if n_cases is not None and n_controls is not None:
+        eff_n = round(4.0 / (1.0 / n_cases + 1.0 / n_controls), 2)
+        eff_source = "vcf_sample_header_neff_4_ncases_ncontrols"
+    elif n_total is not None:
+        eff_n = round(n_total, 2)
+        eff_source = "vcf_sample_header_total_n"
+
+    out: dict[str, Any] = {}
+    if attrs.get("StudyType"):
+        out["SAMPLE_STUDY_TYPE"] = attrs["StudyType"]
+    if n_cases is not None:
+        out["SAMPLE_TOTAL_CASES"] = int(round(n_cases))
+    if n_controls is not None:
+        out["SAMPLE_TOTAL_CONTROLS"] = int(round(n_controls))
+    if eff_n is not None:
+        out["HEADER_EFFECTIVE_N"] = eff_n
+        out["HEADER_EFFECTIVE_N_SOURCE"] = eff_source
+    return out
+
+
+def inspect_vcf_tags(vcf: Path) -> dict[str, Any]:
     result = subprocess.run(
         ["bcftools", "view", "-h", str(vcf)],
         check=True,
@@ -106,14 +149,17 @@ def inspect_vcf_tags(vcf: Path) -> dict[str, bool]:
     )
     header = result.stdout
     return {
+        "FORMAT_SS": bool(re.search(r"^##FORMAT=<ID=SS[>,]", header, re.M)),
+        "FORMAT_NC": bool(re.search(r"^##FORMAT=<ID=NC[>,]", header, re.M)),
         "FORMAT_AF": bool(re.search(r"^##FORMAT=<ID=AF[>,]", header, re.M)),
         "FORMAT_AFS": bool(re.search(r"^##FORMAT=<ID=AFS[>,]", header, re.M)),
         "INFO_HM": bool(re.search(r"^##INFO=<ID=HM[>,]", header, re.M)),
         "VCF_CONTIG_CHR_PREFIX": bool(re.search(r"^##contig=<ID=chr", header, re.M)),
+        **_parse_vcf_sample_header(header),
     }
 
 
-def format_vcf_region(vcf_tags: dict[str, bool] | None, chrom: str,
+def format_vcf_region(vcf_tags: dict[str, Any] | None, chrom: str,
                       start: int, end: int) -> str:
     norm = normalize_chromosome(chrom)
     prefix = "chr" if (vcf_tags and vcf_tags.get("VCF_CONTIG_CHR_PREFIX")) else ""
@@ -122,11 +168,14 @@ def format_vcf_region(vcf_tags: dict[str, bool] | None, chrom: str,
 
 def query_vcf(vcf: Path, region: str | None = None,
               minimum_lp: float | None = None,
-              vcf_tags: dict[str, bool] | None = None) -> list[dict[str, Any]]:
+              vcf_tags: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     if vcf_tags is None:
         vcf_tags = inspect_vcf_tags(vcf)
-    fmt = BASE_QUERY_FORMAT
+    fmt = CORE_QUERY_FORMAT
     optional_cols: list[str] = []
+    if vcf_tags.get("FORMAT_SS", True):
+        fmt += "\\t[%SS{0}]"
+        optional_cols.append("SS")
     if vcf_tags.get("FORMAT_AF"):
         fmt += "\\t[%AF{0}]"
         optional_cols.append("AF")
@@ -156,10 +205,11 @@ def query_vcf(vcf: Path, region: str | None = None,
         p_view.stdout.close()
         stdout_text, q_err = p_query.communicate()
         v_err = p_view.stderr.read().decode("utf-8", errors="ignore") if p_view.stderr else ""
-        if p_view.wait() != 0:
-            raise subprocess.CalledProcessError(p_view.returncode, "bcftools view", stderr=v_err)
+        v_rc = p_view.wait()
         if p_query.returncode != 0:
             raise subprocess.CalledProcessError(p_query.returncode, "bcftools query", stderr=q_err)
+        if v_rc not in (0, -13):
+            raise subprocess.CalledProcessError(v_rc, "bcftools view", stderr=v_err)
     else:
         command = ["bcftools", "query"]
         if region:
@@ -170,14 +220,18 @@ def query_vcf(vcf: Path, region: str | None = None,
         result = subprocess.run(command, check=True, capture_output=True, text=True)
         stdout_text = result.stdout
 
-    expected_len = 9 + len(optional_cols)
+    header_eff_n = vcf_tags.get("HEADER_EFFECTIVE_N")
+    expected_len = 8 + len(optional_cols)
     records = []
     for line_number, line in enumerate(stdout_text.splitlines(), start=1):
         fields = line.split("\t")
         if len(fields) != expected_len:
             raise ValueError(f"Unexpected bcftools query row {line_number}: {line}")
-        chromosome, position, rsid, ref, alt, lp, effect, se, sample_size = fields[:9]
-        extra = dict(zip(optional_cols, fields[9:]))
+        chromosome, position, rsid, ref, alt, lp, effect, se = fields[:8]
+        extra = dict(zip(optional_cols, fields[8:]))
+        ss_val = numeric(extra.get("SS"))
+        if ss_val is None and header_eff_n is not None:
+            ss_val = float(header_eff_n)
         pos_int = int(position)
         chrom_norm = normalize_chromosome(chromosome)
         records.append({
@@ -189,7 +243,7 @@ def query_vcf(vcf: Path, region: str | None = None,
             "LP": numeric(lp),
             "ES": numeric(effect),
             "SE": numeric(se),
-            "SS": numeric(sample_size),
+            "SS": ss_val,
             "AF": numeric(extra.get("AF")),
             "AFS": clean_str(extra.get("AFS")),
             "HM": clean_str(extra.get("HM")),
