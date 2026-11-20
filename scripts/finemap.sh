@@ -86,6 +86,7 @@ Batch control & execution (matching GWASprocessing):
   --allow-ancestry-mismatch  Allow mismatched single-ancestry LD
   --profile NAME             Nextflow profile (default: slurm under sbatch, else local)
   --slurm                    Alias for --profile slurm
+  --slurm-partition PART     SLURM partition(s) for worker jobs (default: $GWASFM_SLURM_PARTITION)
   --slurm-exclude NODES      Comma-separated SLURM nodes to exclude (default: $GWASFM_SLURM_EXCLUDE)
   --container ENGINE         Run tasks inside container: apptainer|docker
   --max-forks INT            Max concurrent GWAS jobs (default: $GWASFM_MAX_FORKS or 2)
@@ -129,6 +130,7 @@ KEEP_INTERMEDIATES="false"
 ALLOW_ANC_MISMATCH="false"
 LOCAL_LD_PANEL=""
 PROFILE=""
+SLURM_PARTITION="${GWASFM_SLURM_PARTITION:-}"
 SLURM_EXCLUDE="${GWASFM_SLURM_EXCLUDE:-}"
 CONTAINER_ENGINE=""
 MAX_FORKS=""
@@ -173,6 +175,7 @@ while [[ $# -gt 0 ]]; do
     --local-ld-panel) LOCAL_LD_PANEL="$2"; shift 2 ;;
     --profile) PROFILE="$2"; shift 2 ;;
     --slurm) PROFILE="slurm"; shift ;;
+    --slurm-partition|--slurm_partition) SLURM_PARTITION="$2"; shift 2 ;;
     --slurm-exclude|--slurm_exclude) SLURM_EXCLUDE="$2"; shift 2 ;;
     --container) CONTAINER_ENGINE="$2"; shift 2 ;;
     --max-forks|--max_forks) MAX_FORKS="$2"; shift 2 ;;
@@ -384,6 +387,7 @@ NF_CMD=(
 [[ -n "$FLANK_BP" ]] && NF_CMD+=(--region_flank_bp "$FLANK_BP")
 [[ -n "$MAX_LOCI" ]] && NF_CMD+=(--max_loci "$MAX_LOCI")
 [[ -n "$MAX_FORKS" ]] && NF_CMD+=(--max_forks "$MAX_FORKS")
+[[ -n "$SLURM_PARTITION" ]] && NF_CMD+=(--slurm_partition "$SLURM_PARTITION")
 [[ -n "$SLURM_EXCLUDE" ]] && NF_CMD+=(--slurm_exclude "$SLURM_EXCLUDE")
 [[ -n "$LOCAL_LD_PANEL" ]] && NF_CMD+=(--local_ld_panel "$LOCAL_LD_PANEL")
 [[ -n "$BM_PATH" ]] && NF_CMD+=(--bm_path "$BM_PATH")
