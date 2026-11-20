@@ -1,5 +1,5 @@
-resolve_effective_n <- function(variants, effective_n) {
-  sample_sizes <- if ("SS" %in% names(variants)) {
+resolve_effective_n <- function(variants, effective_n, allow_missing = FALSE) {
+  sample_sizes <- if ("SS" %in% names(variants) && is.numeric(variants$SS)) {
     variants$SS[!is.na(variants$SS)]
   } else {
     numeric()
@@ -28,11 +28,18 @@ resolve_effective_n <- function(variants, effective_n) {
     ))
   }
 
-  if (!"SS" %in% names(variants)) {
-    stop("SS is unavailable; supply an explicit `effective_n` override.",
-         call. = FALSE)
-  }
   if (length(sample_sizes) == 0L) {
+    if (isTRUE(allow_missing)) {
+      return(list(
+        value = NULL,
+        source = "z_only_unreported_n",
+        summary = NULL
+      ))
+    }
+    if (!"SS" %in% names(variants)) {
+      stop("SS is unavailable; supply an explicit `effective_n` override.",
+           call. = FALSE)
+    }
     stop("No valid per-variant SS values; supply an explicit `effective_n` override.",
          call. = FALSE)
   }
@@ -321,7 +328,8 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
                             R_mismatch = "eb_mix",
                             psd_max_variants = 5000L,
                             eigen_max_variants = 5000L,
-                            prior_weights = NULL) {
+                            prior_weights = NULL,
+                            allow_missing_n = FALSE) {
   if (!method_id %in% c("susie_rss", "susie_rrss", "polyfun")) {
     stop("Unsupported SuSiE method identifier.", call. = FALSE)
   }
@@ -366,7 +374,7 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
     psd_max_variants = psd_max_variants
   )
   psd_status <- attr(ld_check, "psd_status") %||% "passed"
-  n <- resolve_effective_n(variants, effective_n)
+  n <- resolve_effective_n(variants, effective_n, allow_missing = allow_missing_n)
 
   r_mismatch_requested <- if (method_id == "susie_rrss") R_mismatch else "none"
   q_art_eigen_status <- "not_applicable"
@@ -413,7 +421,8 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
   # avoids susieR 2.0.0's un-subsampled get_purity() O(M^2) allocation on diffuse slots.
   # When R was pre-scaled in-place to XtX = (n - 1) * R at load time, bypass
   # susie_rss's second M x M allocation cleanly via sufficient_stats_constructor.
-  if (abs(ld_scale - (n$value - 1)) <= 1e-6 * max(1, n$value - 1)) {
+  expected_scale <- if (is.null(n$value)) 1 else (n$value - 1)
+  if (abs(ld_scale - expected_scale) <= 1e-6 * max(1, expected_scale)) {
     fit <- fit_susie_from_prescaled_xtx(
       z = variants$EZ,
       XtX = R,
@@ -535,8 +544,10 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
     rep(NA_real_, nrow(variants))
   }
   expected_z <- if (!is.null(fit$XtXr) && length(fit$XtXr) == nrow(variants) &&
-                    n$value > 1) {
+                    !is.null(n$value) && n$value > 1) {
     as.numeric(fit$XtXr / sqrt(n$value - 1))
+  } else if (!is.null(fit$XtXr) && length(fit$XtXr) == nrow(variants) && is.null(n$value)) {
+    as.numeric(fit$XtXr)
   } else {
     rep(NA_real_, nrow(variants))
   }
@@ -588,7 +599,8 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
 run_susie_rss <- function(variants, R, effective_n = NULL, L = 10L,
                           coverage = 0.95, min_abs_corr = 0.5,
                           max_iter = 50L, refine = FALSE,
-                          psd_max_variants = 5000L) {
+                          psd_max_variants = 5000L,
+                          allow_missing_n = FALSE) {
   run_susie_model(
     variants = variants,
     R = R,
@@ -599,7 +611,8 @@ run_susie_rss <- function(variants, R, effective_n = NULL, L = 10L,
     min_abs_corr = min_abs_corr,
     max_iter = max_iter,
     refine = refine,
-    psd_max_variants = psd_max_variants
+    psd_max_variants = psd_max_variants,
+    allow_missing_n = allow_missing_n
   )
 }
 
@@ -608,7 +621,8 @@ run_susie_rrss <- function(variants, R, reference_sample_size,
                            min_abs_corr = 0.5, max_iter = 50L,
                            refine = FALSE, R_mismatch = "eb_mix",
                            psd_max_variants = 5000L,
-                           eigen_max_variants = 5000L) {
+                           eigen_max_variants = 5000L,
+                           allow_missing_n = FALSE) {
   run_susie_model(
     variants = variants,
     R = R,
@@ -622,6 +636,7 @@ run_susie_rrss <- function(variants, R, reference_sample_size,
     refine = refine,
     R_mismatch = R_mismatch,
     psd_max_variants = psd_max_variants,
-    eigen_max_variants = eigen_max_variants
+    eigen_max_variants = eigen_max_variants,
+    allow_missing_n = allow_missing_n
   )
 }

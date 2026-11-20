@@ -44,6 +44,9 @@ validate_gwas_stats <- function(variants, require_p = FALSE, require_z = FALSE) 
 
   for (field in intersect(c("P", "LP", "EZ", "Z", "ES", "SE", "SS",
                             "AF", "NC", "SI"), names(out))) {
+    if (is.logical(out[[field]]) && all(is.na(out[[field]]))) {
+      out[[field]] <- as.numeric(out[[field]])
+    }
     if (!is.numeric(out[[field]])) {
       stop(field, " must be numeric.", call. = FALSE)
     }

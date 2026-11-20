@@ -125,6 +125,11 @@ for (bcol in intersect(c("mhc_region", "mhc_core_grc", "PANEL_ALLELE_SWAPPED"), 
     variants[[bcol]] <- tolower(as.character(variants[[bcol]])) == "true"
   }
 }
+for (ncol_nm in intersect(c("LP", "ES", "SE", "SS", "AF", "EZ", "LD_R2_TO_LEAD"), names(variants))) {
+  if (is.logical(variants[[ncol_nm]]) && all(is.na(variants[[ncol_nm]]))) {
+    variants[[ncol_nm]] <- as.numeric(variants[[ncol_nm]])
+  }
+}
 
 priors_pre <- NULL
 if ("polyfun" %in% methods_req) {
@@ -141,18 +146,22 @@ if ("polyfun" %in% methods_req) {
 }
 
 # --- 2. Load matrix.npy ONCE (unscaled if p_ld/carma needed, else pre-scaled XtX) ---
+ss_non_na <- if ("SS" %in% names(variants)) as.numeric(variants$SS[!is.na(variants$SS)]) else numeric()
 n_eff_load <- if (!is.null(effective_n)) {
   as.numeric(effective_n)
+} else if (length(ss_non_na) > 0L) {
+  min(ss_non_na)
 } else {
-  min(variants$SS[!is.na(variants$SS)])
+  NULL
 }
+target_susie_scale <- if (is.null(n_eff_load)) 1 else (n_eff_load - 1)
 need_unscaled <- any(c("p_ld", "carma") %in% methods_req)
 need_scaled <- any(c("susie_rss", "susie_rrss", "polyfun") %in% methods_req)
 only_polyfun_skip <- identical(methods_req, "polyfun") &&
   !is.null(priors_pre) &&
   identical(priors_pre$status, "skipped_unsupported_chromosome")
 
-initial_scale <- if (need_unscaled) 1 else (n_eff_load - 1)
+initial_scale <- if (need_unscaled) 1 else target_susie_scale
 R <- if (only_polyfun_skip) {
   matrix(1, nrow = 1L, ncol = 1L, dimnames = list("skip", "skip"))
 } else {
@@ -313,13 +322,13 @@ if ("carma" %in% methods_req) {
 }
 
 # --- 4. Scale R -> XtX in-place in C (0-copy) & run SuSiE methods -------------
-if (need_unscaled && need_scaled && !only_polyfun_skip) {
+if (need_unscaled && need_scaled && !only_polyfun_skip && target_susie_scale != 1) {
   scale_fn <- if (exists("scale_ld_matrix_inplace", mode = "function")) {
     scale_ld_matrix_inplace
   } else {
     getFromNamespace("scale_ld_matrix_inplace", "gwasfinemapping")
   }
-  R <- scale_fn(R, n_eff_load - 1)
+  R <- scale_fn(R, target_susie_scale)
 }
 
 if ("susie_rss" %in% methods_req) {
@@ -333,7 +342,8 @@ if ("susie_rss" %in% methods_req) {
     L = max_causal,
     coverage = coverage,
     min_abs_corr = min_abs_corr,
-    max_iter = max_iter
+    max_iter = max_iter,
+    allow_missing_n = TRUE
   )
   fit_s <- (proc.time() - t_f0)[["elapsed"]]
   save_bayesian_outputs("susie_rss", res_rss, io_s, fit_s, t_m0)
@@ -354,7 +364,8 @@ if ("susie_rrss" %in% methods_req) {
     coverage = coverage,
     min_abs_corr = min_abs_corr,
     max_iter = max_iter,
-    R_mismatch = r_mismatch
+    R_mismatch = r_mismatch,
+    allow_missing_n = TRUE
   )
   fit_s <- (proc.time() - t_f0)[["elapsed"]]
   save_bayesian_outputs("susie_rrss", res_rrss, io_s, fit_s, t_m0)
@@ -378,7 +389,8 @@ if ("polyfun" %in% methods_req) {
       L = max_causal,
       coverage = coverage,
       min_abs_corr = min_abs_corr,
-      max_iter = max_iter
+      max_iter = max_iter,
+      allow_missing_n = TRUE
     )
     res_pf$variants$SNPVAR <- priors_pre$snpvar
     res_pf$variants$PRIOR_MATCHED <- priors_pre$matched
@@ -400,7 +412,8 @@ if ("polyfun" %in% methods_req) {
       L = max_causal,
       coverage = coverage,
       min_abs_corr = min_abs_corr,
-      max_iter = max_iter
+      max_iter = max_iter,
+      allow_missing_n = TRUE
     )
   }
   fit_s <- (proc.time() - t_f0)[["elapsed"]]

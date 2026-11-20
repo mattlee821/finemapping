@@ -227,7 +227,8 @@ run_polyfun_susie <- function(variants, R, prior_weights = NULL,
                               effective_n = NULL, L = 10L,
                               coverage = 0.95, min_abs_corr = 0.5,
                               max_iter = 50L, refine = FALSE,
-                              psd_max_variants = 5000L) {
+                              psd_max_variants = 5000L,
+                              allow_missing_n = FALSE) {
   missing_prior_policy <- match.arg(missing_prior_policy)
   variants <- validate_gwas_stats(variants, require_p = TRUE, require_z = TRUE)
   if (nrow(variants) == 0L) {
@@ -322,7 +323,8 @@ run_polyfun_susie <- function(variants, R, prior_weights = NULL,
     max_iter = max_iter,
     refine = refine,
     psd_max_variants = psd_max_variants,
-    prior_weights = priors_info$prior_weights
+    prior_weights = priors_info$prior_weights,
+    allow_missing_n = allow_missing_n
   )
 
   n_matched <- sum(priors_info$matched)

@@ -540,6 +540,28 @@ class LocusWorkerScratchTests(unittest.TestCase):
                 self.assertEqual(recs_scan[0]["SS"], expected_neff)
                 self.assertEqual(recs_reg[0]["SS"], expected_neff)
 
+        # Also verify CaseControl without TotalCases/TotalControls estimates Neff from SE + AF
+        hdr_no_n = (
+            '##FORMAT=<ID=ES,Number=A,Type=Float,Description="Effect">\n'
+            '##FORMAT=<ID=SE,Number=A,Type=Float,Description="SE">\n'
+            '##FORMAT=<ID=LP,Number=A,Type=Float,Description="-log10P">\n'
+            '##FORMAT=<ID=AF,Number=A,Type=Float,Description="AF">\n'
+            '##SAMPLE=<ID=GECCO_colon_male_noUKB,StudyType=CaseControl,Ancestry=ALL>\n'
+        )
+        parsed_no_n = run_finemapping._parse_vcf_sample_header(hdr_no_n)
+        self.assertNotIn("HEADER_EFFECTIVE_N", parsed_no_n)
+        # True Neff = 32000, AF = 0.25 -> SE = sqrt(2 / (0.25 * 0.75 * 32000))
+        true_neff = 32000.0
+        se_val = (2.0 / (0.25 * 0.75 * true_neff)) ** 0.5
+        est = run_finemapping.estimate_case_control_effective_n(
+            [{"AF": 0.25, "SE": se_val}],
+            parsed_no_n,
+        )
+        self.assertAlmostEqual(est, true_neff, places=1)
+        # Verify /dev/shm is excluded from automatic node temp candidates
+        cand_strs = [str(p) for p in locus_worker.candidate_node_tmp_roots()]
+        self.assertNotIn("/dev/shm", cand_strs)
+
 
 if __name__ == "__main__":
     unittest.main()

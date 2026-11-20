@@ -140,6 +140,28 @@ def _parse_vcf_sample_header(header: str) -> dict[str, Any]:
     return out
 
 
+def estimate_case_control_effective_n(
+    records: list[dict[str, Any]],
+    vcf_tags: dict[str, Any] | None,
+) -> float | None:
+    """Estimate logistic-regression N_eff = 4/(1/N_cases + 1/N_controls) = median(2/(AF*(1-AF)*SE^2))."""
+    if not vcf_tags or str(vcf_tags.get("SAMPLE_STUDY_TYPE") or "").lower() != "casecontrol":
+        return None
+    import statistics
+
+    ests: list[float] = []
+    for rec in records:
+        af = rec.get("AF")
+        se = rec.get("SE")
+        if af is not None and se is not None and 0.05 <= af <= 0.95 and se > 0:
+            val = 2.0 / (af * (1.0 - af) * se * se)
+            if 50.0 <= val <= 5e7:
+                ests.append(val)
+    if not ests:
+        return None
+    return round(float(statistics.median(ests)), 2)
+
+
 def inspect_vcf_tags(vcf: Path) -> dict[str, Any]:
     result = subprocess.run(
         ["bcftools", "view", "-h", str(vcf)],
@@ -250,6 +272,11 @@ def query_vcf(vcf: Path, region: str | None = None,
             "mhc_region": is_mhc_grch38(chrom_norm, pos_int),
             "mhc_core_grc": is_mhc_core_grc_grch38(chrom_norm, pos_int),
         })
+    if records and all(r["SS"] is None for r in records):
+        est_neff = estimate_case_control_effective_n(records, vcf_tags)
+        if est_neff is not None:
+            for r in records:
+                r["SS"] = est_neff
     return records
 
 

@@ -156,25 +156,16 @@ def candidate_node_tmp_roots(
     except OSError:
         pass
 
-    # For >=16 GiB matrices, prefer node-local disk (/usr/local/scratch) before /dev/shm so
-    # multi-tens-of-GB matrix.npy files do not count against the SLURM --mem cgroup.
-    # Never include $TMPDIR here because finemap.sh exports TMPDIR to shared /scratch/.../tmp/<RUN_ID>.
-    if prefer_local_disk:
-        raw_candidates = (
-            env.get("SLURM_TMPDIR"),
-            local_scratch_user,
-            "/usr/local/scratch",
-            "/dev/shm",
-            "/tmp",
-        )
-    else:
-        raw_candidates = (
-            env.get("SLURM_TMPDIR"),
-            "/dev/shm",
-            local_scratch_user,
-            "/usr/local/scratch",
-            "/tmp",
-        )
+    # Stage on dedicated SLURM job SSD or node-local disk (/usr/local/scratch -> /tmp).
+    # Avoid /dev/shm because SLURM epilogs on shared compute nodes may wipe user /dev/shm
+    # files when a sibling task finishes, and never include $TMPDIR (shared /scratch NFS).
+    _ = prefer_local_disk
+    raw_candidates = (
+        env.get("SLURM_TMPDIR"),
+        local_scratch_user,
+        "/usr/local/scratch",
+        "/tmp",
+    )
     for raw in raw_candidates:
         if not raw:
             continue
