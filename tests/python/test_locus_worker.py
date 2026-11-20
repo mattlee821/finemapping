@@ -417,6 +417,83 @@ class LocusWorkerScratchTests(unittest.TestCase):
             self.assertTrue(good_loc.is_dir())
             self.assertFalse(bad_loc.exists())
 
+    def test_partial_locus_resumes_only_missing_methods(self) -> None:
+        import json
+        import tempfile
+
+        methods = ["p_ld", "susie_rss", "susie_rrss", "carma", "polyfun"]
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            scratch_root = base / "scratch"
+            outdir = base / "finemapping"
+            row = {
+                "study_id": "sun_2023_37794186",
+                "gwas_id": "O15467_OID20334",
+                "settings_hash": "ba2586a3922cdc95",
+                "outdir": str(outdir),
+                "methods": methods,
+                "force": False,
+                "keep_intermediates": False,
+                "chain": "/tmp/chain",
+                "grch37_fasta": "/tmp/fa",
+                "cache_dir": "/tmp/cache",
+            }
+            row_json = base / "row.json"
+            row_json.write_text(json.dumps(row), encoding="utf-8")
+            screen_json = base / "screen.json"
+            screen_json.write_text(
+                json.dumps({
+                    "reference_sample_size": 420542,
+                    "selected_regions": [{"region_id": "chr6_61385886_67594203", "vcf_variants_in_region": 51085}],
+                }),
+                encoding="utf-8",
+            )
+
+            loc_dir = locus_worker.gwas_scratch_loci_dir(scratch_root, row) / "chr6_61385886_67594203"
+            loc_dir.mkdir(parents=True)
+            (loc_dir / "locus_prep_qc.json").write_text(
+                json.dumps({"status": "prepared", "variants_ld_matched": 51085}),
+                encoding="utf-8",
+            )
+            # Pre-populate 4 of 5 methods complete (only polyfun missing!)
+            for m in ("p_ld", "carma", "susie_rss", "susie_rrss"):
+                md = loc_dir / "methods" / m
+                md.mkdir(parents=True)
+                (md / "region_result.rds").write_bytes(b"SAVED_RDS")
+                (md / "method_qc.json").write_text(json.dumps({"method_id": m}), encoding="utf-8")
+
+            recorded_cmds: list[list[str]] = []
+
+            def fake_run(cmd: list[str], step_stem: str, gwas_log_dir: Path, sub_env: dict[str, str]) -> None:
+                recorded_cmds.append(cmd)
+                if "prep_locus.py" in " ".join(cmd):
+                    wd = Path(cmd[cmd.index("--outdir") + 1])
+                    (wd / "locus_prep_qc.json").write_text(
+                        json.dumps({"status": "prepared", "variants_ld_matched": 51085}),
+                        encoding="utf-8",
+                    )
+                    (wd / "matched_variants.tsv").write_text("CHROM\n", encoding="utf-8")
+                    (wd / "matrix.npy").write_bytes(b"NPY")
+
+            args = locus_worker.parse_args([
+                "--project-dir", str(SCRIPTS_DIR.parent),
+                "--row-json", str(row_json),
+                "--screen-json", str(screen_json),
+                "--locus-index", "0",
+                "--region-id", "chr6_61385886_67594203",
+                "--region-type", "lead_locus",
+                "--scratch-root", str(scratch_root),
+                "--out-root-file", str(base / ".out_root"),
+            ])
+            with mock.patch("locus_worker._run_and_log", side_effect=fake_run):
+                rc = locus_worker.run_locus_worker(args)
+            self.assertEqual(rc, 0)
+            self.assertEqual(len(recorded_cmds), 2)
+            r_cmd = recorded_cmds[1]
+            self.assertEqual(r_cmd[r_cmd.index("--methods") + 1], "polyfun")
+            for m in ("p_ld", "carma", "susie_rss", "susie_rrss"):
+                self.assertTrue((loc_dir / "methods" / m / "region_result.rds").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

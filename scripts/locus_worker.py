@@ -36,6 +36,7 @@ from typing import Any
 DEFAULT_LOCUS_RESERVE_BYTES = int(5.5 * (1024 ** 3))   # Fallback for standard <=9.5 Mb locus
 MHC_LOCUS_RESERVE_BYTES = int(55.0 * (1024 ** 3))      # Fallback for extended 8.5 Mb MHC locus (~80k variants)
 MIN_DYNAMIC_RESERVE_BYTES = int(1.5 * (1024 ** 3))     # Floor for sparse loci
+LARGE_MATRIX_DISK_THRESHOLD_BYTES = int(16.0 * (1024 ** 3))  # >=16 GiB prefers node-local disk over /dev/shm cgroup RAM
 DEFAULT_MIN_HEADROOM_BYTES = int(4.0 * (1024 ** 3))    # Leave >=4 GiB untouched on node temp/tmpfs
 LEGACY_ORPHAN_AGE_SECONDS = 120.0
 SKIPPED_PREP_STATUSES = ("skipped_no_lifted_variants", "skipped_no_panel_matched_variants")
@@ -131,6 +132,7 @@ def candidate_node_tmp_roots(
     environ: dict[str, str] | None = None,
     home_dir: Path | None = None,
     exclude_roots: list[Path] | None = None,
+    prefer_local_disk: bool = False,
 ) -> list[Path]:
     """Return writable node-local temp directories strictly outside $HOME and shared /scratch."""
     env = os.environ if environ is None else environ
@@ -146,15 +148,33 @@ def candidate_node_tmp_roots(
     roots: list[Path] = []
     uid = os.getuid()
     user_name = env.get("USER") or str(uid)
-    # Order: dedicated SLURM job SSD -> RAM tmpfs (/dev/shm) -> node-local disk (/usr/local/scratch) -> /tmp.
+    local_scratch_base = Path("/usr/local/scratch")
+    local_scratch_user = f"/usr/local/scratch/{user_name}"
+    try:
+        if local_scratch_base.is_dir() and os.access(local_scratch_base, os.W_OK | os.X_OK):
+            Path(local_scratch_user).mkdir(mode=0o700, exist_ok=True)
+    except OSError:
+        pass
+
+    # For >=16 GiB matrices, prefer node-local disk (/usr/local/scratch) before /dev/shm so
+    # multi-tens-of-GB matrix.npy files do not count against the SLURM --mem cgroup.
     # Never include $TMPDIR here because finemap.sh exports TMPDIR to shared /scratch/.../tmp/<RUN_ID>.
-    raw_candidates = (
-        env.get("SLURM_TMPDIR"),
-        "/dev/shm",
-        f"/usr/local/scratch/{user_name}",
-        "/usr/local/scratch",
-        "/tmp",
-    )
+    if prefer_local_disk:
+        raw_candidates = (
+            env.get("SLURM_TMPDIR"),
+            local_scratch_user,
+            "/usr/local/scratch",
+            "/dev/shm",
+            "/tmp",
+        )
+    else:
+        raw_candidates = (
+            env.get("SLURM_TMPDIR"),
+            "/dev/shm",
+            local_scratch_user,
+            "/usr/local/scratch",
+            "/tmp",
+        )
     for raw in raw_candidates:
         if not raw:
             continue
@@ -203,6 +223,22 @@ def _normalize_method_id(name: str) -> str:
     return "polyfun" if m == "polyfun_susie" else m
 
 
+def method_output_is_complete(loc_dir: Path, method_raw: str) -> bool:
+    """Return True iff a single method's `.rds` and `method_qc.json` are valid and complete."""
+    m_id = _normalize_method_id(method_raw)
+    rds_path = loc_dir / "methods" / m_id / "region_result.rds"
+    mqc_path = loc_dir / "methods" / m_id / "method_qc.json"
+    try:
+        if not rds_path.is_file() or rds_path.stat().st_size == 0:
+            return False
+        if not mqc_path.is_file() or mqc_path.stat().st_size == 0:
+            return False
+        mqc = json.loads(mqc_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+    return isinstance(mqc, dict) and mqc.get("method_id") == m_id
+
+
 def locus_outputs_are_complete(loc_dir: Path, methods: list[str]) -> bool:
     """Return True iff `loc_dir` already holds valid prep QC and every requested method output."""
     prep_qc_path = loc_dir / "locus_prep_qc.json"
@@ -221,21 +257,7 @@ def locus_outputs_are_complete(loc_dir: Path, methods: list[str]) -> bool:
     if status != "prepared":
         return False
 
-    for m_raw in methods:
-        m_id = _normalize_method_id(m_raw)
-        rds_path = loc_dir / "methods" / m_id / "region_result.rds"
-        mqc_path = loc_dir / "methods" / m_id / "method_qc.json"
-        try:
-            if not rds_path.is_file() or rds_path.stat().st_size == 0:
-                return False
-            if not mqc_path.is_file() or mqc_path.stat().st_size == 0:
-                return False
-            mqc = json.loads(mqc_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
-            return False
-        if not isinstance(mqc, dict) or mqc.get("method_id") != m_id:
-            return False
-    return True
+    return all(method_output_is_complete(loc_dir, m_raw) for m_raw in methods)
 
 
 def migrate_run_scratch(run_scratch_dir: Path, rows_dir: Path, scratch_root: Path) -> dict[str, int]:
@@ -287,7 +309,10 @@ def allocate_locus_workdir(
     uid = os.getuid()
     my_host = socket.gethostname()
     candidates = (
-        candidate_node_tmp_roots(exclude_roots=[final_loci_root])
+        candidate_node_tmp_roots(
+            exclude_roots=[final_loci_root],
+            prefer_local_disk=(reserve_bytes >= LARGE_MATRIX_DISK_THRESHOLD_BYTES),
+        )
         if tmp_candidates is None
         else tmp_candidates
     )
@@ -556,11 +581,31 @@ def run_locus_worker(args: argparse.Namespace) -> int:
         return 0
 
     final_loc_dir.mkdir(parents=True, exist_ok=True)
+    prev_matched_count: int | None = None
+    reusable_methods: set[str] = set()
+    if (not keep_inter) and (not force_run) and (final_loc_dir / "locus_prep_qc.json").is_file():
+        try:
+            prev_qc = json.loads((final_loc_dir / "locus_prep_qc.json").read_text(encoding="utf-8"))
+            if isinstance(prev_qc, dict) and prev_qc.get("status") == "prepared":
+                prev_matched_count = int(prev_qc.get("variants_ld_matched", -1))
+                for m_raw in row["methods"]:
+                    if method_output_is_complete(final_loc_dir, m_raw):
+                        reusable_methods.add(_normalize_method_id(m_raw))
+        except (OSError, ValueError, TypeError):
+            reusable_methods = set()
+
     if not keep_inter:
-        # Clear any partial/failed state for THIS locus before re-running
+        # Clear any partial/failed state while preserving already-completed sibling methods
         (final_loc_dir / "locus_prep_qc.json").unlink(missing_ok=True)
-        shutil.rmtree(final_loc_dir / "methods", ignore_errors=True)
+        if not reusable_methods:
+            shutil.rmtree(final_loc_dir / "methods", ignore_errors=True)
+        elif (final_loc_dir / "methods").is_dir():
+            for child in (final_loc_dir / "methods").iterdir():
+                if child.name not in reusable_methods:
+                    shutil.rmtree(child, ignore_errors=True)
     for stale_log in gwas_log_dir.glob(f"0[23]_*_{safe_reg}*"):
+        if any(stale_log.name == f"03_method_{safe_reg}_{rm}.log" for rm in reusable_methods):
+            continue
         stale_log.unlink(missing_ok=True)
 
     if keep_inter:
@@ -626,6 +671,13 @@ def run_locus_worker(args: argparse.Namespace) -> int:
 
         prep_qc = json.loads(prep_qc_src.read_text(encoding="utf-8")) if prep_qc_src.is_file() else {}
         if prep_qc.get("status") == "prepared":
+            if prev_matched_count is not None and int(prep_qc.get("variants_ld_matched", -2)) == prev_matched_count:
+                methods_to_run = [m for m in row["methods"] if _normalize_method_id(m) not in reusable_methods]
+            else:
+                if reusable_methods:
+                    shutil.rmtree(final_loc_dir / "methods", ignore_errors=True)
+                methods_to_run = list(row["methods"])
+
             variants_tsv = claim.work_dir / "matched_variants.tsv"
             matrix_npy = claim.work_dir / "matrix.npy"
             batch_runner = proj / "scripts" / "methods" / "run_all_methods.R"
@@ -643,7 +695,7 @@ def run_locus_worker(args: argparse.Namespace) -> int:
                 "--region-type",
                 reg_type,
                 "--methods",
-                ",".join(row["methods"]),
+                ",".join(methods_to_run),
                 "--out-methods-dir",
                 str(final_loc_dir / "methods"),
                 "--log-dir",

@@ -252,6 +252,7 @@ else
   mkdir -p "$OUTDIR" "$LOG_ROOT" "${GWASFM_NXF_WORK}" "${NXF_CACHE_DIR}"
 fi
 NXF_LOG="${LOG_ROOT}/nextflow.${RUN_ID}.log"
+export NXF_OPTS="${NXF_OPTS:--Xms2g -Xmx10g}"
 
 # Fast preflight path on host: skip Nextflow JVM startup for --dry-run or when all rows are already complete
 SKIP_NXF=0
