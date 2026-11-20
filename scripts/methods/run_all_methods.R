@@ -88,16 +88,15 @@ if (is.null(safe_region) || !nzchar(safe_region)) {
   safe_region <- gsub("[^A-Za-z0-9._-]+", "_", region_id)
 }
 
-# Load compiled gwasfinemapping C routines + latest R helpers
+# Load compiled gwasfinemapping C shared library (.so), then source repo R/ files
+# so pure-R updates take effect immediately without rebuilding/replacing the .so mid-run
 if (requireNamespace("gwasfinemapping", quietly = TRUE)) {
   library(gwasfinemapping)
 }
-# Source repo R/ files if running against an uninstalled or pre-update build
-if (!exists("scale_ld_matrix_inplace", mode = "function") &&
-    !(requireNamespace("gwasfinemapping", quietly = TRUE) &&
-      exists("scale_ld_matrix_inplace", where = asNamespace("gwasfinemapping"), mode = "function"))) {
-  for (f in list.files(file.path(repo_root, "R"), pattern = "[.]R$", full.names = TRUE)) {
-    source(f)
+r_src_dir <- file.path(repo_root, "R")
+if (dir.exists(r_src_dir)) {
+  for (f in sort(list.files(r_src_dir, pattern = "[.]R$", full.names = TRUE))) {
+    source(f, local = FALSE)
   }
 }
 
