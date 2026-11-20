@@ -488,9 +488,34 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
 
     # --- 4. Regional Pan-UKB VariantIndex slice & vectorized allele match -----
     t_idx0 = time.monotonic()
-    index_path = ensure_regional_index(
-        population, target_chrom, target_start, target_end, cache_dir, SCRIPT_DIR, panukb_dir
-    )
+    try:
+        index_path = ensure_regional_index(
+            population, target_chrom, target_start, target_end, cache_dir, SCRIPT_DIR, panukb_dir
+        )
+    except ValueError as exc:
+        if "has no variants in" in str(exc):
+            reason_counts = dict(Counter(r["reason"] for r in (maf_excluded + liftover_excluded + cross_chrom_excluded)))
+            reason_counts["region_absent_from_panukb_ld_panel"] = len(normalized)
+            qc_skip = {
+                "region_id": region_id,
+                "region_type": region_type,
+                "source_region_grch38": f"{chrom}:{start}-{end}",
+                "target_region_grch37": f"{target_chrom}:{target_start}-{target_end}",
+                "status": "skipped_no_panel_matched_variants",
+                "skip_detail": str(exc),
+                "min_maf": min_maf,
+                "mhc_region": locus["mhc_region"],
+                "mhc_core_grc": locus["mhc_core_grc"],
+                "variants_in_source_region": n_source_records,
+                "variants_removed_min_maf": len(maf_excluded),
+                "variants_after_min_maf": len(records),
+                "variants_lifted": len(normalized),
+                "variants_ld_matched": 0,
+                "exclusion_reasons": reason_counts,
+            }
+            write_json(outdir / "locus_prep_qc.json", qc_skip)
+            return qc_skip
+        raise
     index_cut_seconds = round(time.monotonic() - t_idx0, 3)
 
     t_m0 = time.monotonic()
