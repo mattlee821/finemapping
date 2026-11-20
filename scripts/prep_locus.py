@@ -320,6 +320,80 @@ def _apply_flips_inplace(matrix: Any, flip_positions: list[int]) -> Any:
     return matrix
 
 
+def _clamp_to_grch37_ld_band(
+    normalized: list[dict[str, Any]],
+    locus: dict[str, Any],
+    gene: dict[str, Any] | None = None,
+    max_span_bp: int = 9_980_000,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    """Keep the maximally populated <=9.98 Mb GRCh37 interval containing the locus anchor.
+
+    Pericentromeric segmental duplications and assembly rearrangements (e.g. chr1 1p12 <-> 1q21.1
+    around REG4/NOTCH2, chr9 pericentromere around CA9) lift a subset of GRCh38 variants >20 Mb
+    onto the opposite chromosome arm on GRCh37, where Pan-UKB's 10 Mb BlockMatrix stores zero
+    pairwise LD with the primary locus. Clamping retains the full primary locus band and records
+    cross-centromere/translocated variants under `lifted_outside_grch37_10mb_band`.
+    """
+    if not normalized:
+        return [], [], 0
+    min_pos = min(int(r["LD_POS"]) for r in normalized)
+    max_pos = max(int(r["LD_POS"]) for r in normalized)
+    unclamped_span = max_pos - min_pos
+    if unclamped_span <= max_span_bp:
+        return normalized, [], unclamped_span
+
+    region_type = str(locus.get("region_type") or "")
+    lead = locus.get("lead") or {}
+    lead_pos_38 = lead.get("POS")
+
+    if region_type == "cis_gene" and gene is not None and gene.get("start") and gene.get("end"):
+        target_pos_38 = (int(gene["start"]) + int(gene["end"])) // 2
+        anchor_row = min(normalized, key=lambda r: abs(int(r["POS"]) - target_pos_38))
+    elif lead_pos_38 is not None:
+        anchor_row = min(
+            normalized,
+            key=lambda r: (abs(int(r["POS"]) - int(lead_pos_38)), -(float(r.get("LP") or 0.0))),
+        )
+    else:
+        anchor_row = max(normalized, key=lambda r: float(r.get("LP") or 0.0))
+    anchor_ld_pos = int(anchor_row["LD_POS"])
+
+    pos_sorted = sorted(int(r["LD_POS"]) for r in normalized)
+    n = len(pos_sorted)
+    best_count = -1
+    best_dist = float("inf")
+    best_bounds = (anchor_ld_pos, anchor_ld_pos)
+    j = 0
+    for i in range(n):
+        start_p = pos_sorted[i]
+        if start_p > anchor_ld_pos:
+            break
+        while j + 1 < n and pos_sorted[j + 1] - start_p <= max_span_bp:
+            j += 1
+        end_p = pos_sorted[j]
+        if end_p < anchor_ld_pos:
+            continue
+        cnt = j - i + 1
+        center_dist = abs(0.5 * (start_p + end_p) - anchor_ld_pos)
+        if cnt > best_count or (cnt == best_count and center_dist < best_dist):
+            best_count = cnt
+            best_dist = center_dist
+            best_bounds = (start_p, end_p)
+
+    b_start, b_end = best_bounds
+    kept: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    for r in normalized:
+        if b_start <= int(r["LD_POS"]) <= b_end:
+            kept.append(r)
+        else:
+            r_exc = dict(r)
+            r_exc["status"] = "excluded"
+            r_exc["reason"] = "lifted_outside_grch37_10mb_band"
+            excluded.append(r_exc)
+    return kept, excluded, unclamped_span
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     no_cli = (argv is None and len(sys.argv) == 1)
     default_bm = (
@@ -477,6 +551,10 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
         write_json(outdir / "locus_prep_qc.json", qc_skip)
         return qc_skip
 
+    normalized, band_excluded, unclamped_grch37_span = _clamp_to_grch37_ld_band(
+        normalized, locus, gene=gene, max_span_bp=9_980_000
+    )
+
     target_chrom = chrom
     target_start = max(1, min(r["LD_POS"] for r in normalized) - 100)
     target_end = max(r["LD_POS"] for r in normalized) + 100
@@ -494,7 +572,7 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
         )
     except ValueError as exc:
         if "has no variants in" in str(exc):
-            reason_counts = dict(Counter(r["reason"] for r in (maf_excluded + liftover_excluded + cross_chrom_excluded)))
+            reason_counts = dict(Counter(r["reason"] for r in (maf_excluded + liftover_excluded + cross_chrom_excluded + band_excluded)))
             reason_counts["region_absent_from_panukb_ld_panel"] = len(normalized)
             qc_skip = {
                 "region_id": region_id,
@@ -510,6 +588,7 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
                 "variants_removed_min_maf": len(maf_excluded),
                 "variants_after_min_maf": len(records),
                 "variants_lifted": len(normalized),
+                "variants_excluded_grch37_band": len(band_excluded),
                 "variants_ld_matched": 0,
                 "exclusion_reasons": reason_counts,
             }
@@ -523,7 +602,7 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
     matched, panel_excluded = resolve_panel_matches(normalized, matches)
     match_seconds = round(time.monotonic() - t_m0, 3)
 
-    all_excluded = maf_excluded + liftover_excluded + cross_chrom_excluded + panel_excluded
+    all_excluded = maf_excluded + liftover_excluded + cross_chrom_excluded + band_excluded + panel_excluded
     reason_counts = dict(Counter(r["reason"] for r in all_excluded))
 
     if not matched:
@@ -684,6 +763,9 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
         "target_region_grch37": f"{target_chrom}:{target_start}-{target_end}",
         "width_bp_grch38": end - start,
         "width_bp_grch37": grch37_span,
+        "unclamped_width_bp_grch37": unclamped_grch37_span,
+        "grch37_band_clamped": len(band_excluded) > 0,
+        "variants_excluded_grch37_band": len(band_excluded),
         "mhc_region": locus["mhc_region"],
         "mhc_core_grc": any(r["mhc_core_grc"] for r in matched_rows),
         "cis_overlap": locus["cis_overlap"],

@@ -763,6 +763,33 @@ class LocusWorkerScratchTests(unittest.TestCase):
             self.assertEqual(prov["cis_max_iter"], 200)
             self.assertEqual(qc_out["total_variants_removed_min_maf"], 8488)
 
+    def test_pericentromeric_grch37_band_clamping_retains_reg4_arm_and_excludes_1q21_duplications(self) -> None:
+        import prep_locus
+
+        # Simulate REG4 cis region (1p12: GRCh38 117.15-122.90 Mb):
+        # 500 variants lift cleanly to 1p12 (GRCh37 117.7-121.4 Mb), while 12 pericentromeric
+        # NOTCH2NL/NBPF variants jump 28 Mb across the chr1 centromere to 1q21.1 (145.5-149.7 Mb).
+        p_arm = [
+            {"POS": 117_500_000 + i * 7_500, "LD_POS": 118_000_000 + i * 7_000, "LP": 5.0}
+            for i in range(500)
+        ]
+        p_arm[300] = {"POS": 119_800_000, "LD_POS": 120_340_000, "LP": 420.0}  # REG4 cis-pQTL lead
+        q_arm_dups = [
+            {"POS": 120_600_000 + j * 20_000, "LD_POS": 149_500_000 + j * 18_000, "LP": 9.5}
+            for j in range(12)
+        ]
+        locus = {"region_type": "cis_gene", "lead": {"POS": 119_800_000, "LP": 420.0}}
+        gene = {"gene_symbol": "REG4", "chrom": "1", "start": 119_794_017, "end": 119_811_580}
+
+        kept, excluded, unclamped = prep_locus._clamp_to_grch37_ld_band(
+            p_arm + q_arm_dups, locus, gene=gene, max_span_bp=9_980_000
+        )
+        self.assertGreater(unclamped, 30_000_000)
+        self.assertEqual(len(kept), 500)
+        self.assertEqual(len(excluded), 12)
+        self.assertTrue(all(r["reason"] == "lifted_outside_grch37_10mb_band" for r in excluded))
+        self.assertLessEqual(max(r["LD_POS"] for r in kept) - min(r["LD_POS"] for r in kept), 9_980_000)
+
 
 if __name__ == "__main__":
     unittest.main()
