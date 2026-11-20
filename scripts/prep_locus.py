@@ -324,7 +324,7 @@ def _clamp_to_grch37_ld_band(
     normalized: list[dict[str, Any]],
     locus: dict[str, Any],
     gene: dict[str, Any] | None = None,
-    max_span_bp: int = 9_980_000,
+    max_span_bp: int = 9_600_000,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
     """Keep the maximally populated <=9.98 Mb GRCh37 interval containing the locus anchor.
 
@@ -392,6 +392,73 @@ def _clamp_to_grch37_ld_band(
             r_exc["reason"] = "lifted_outside_grch37_10mb_band"
             excluded.append(r_exc)
     return kept, excluded, unclamped_span
+
+
+def _prune_degenerate_panukb_ld_rows(
+    matrix: Any,
+    matched_rows: list[dict[str, Any]],
+) -> tuple[Any, list[dict[str, Any]], dict[str, int]]:
+    """Drop individual Pan-UKB variants with zero/invalid residualized diagonal or unstored edge NaNs."""
+    import numpy as np
+
+    extra_reasons: dict[str, int] = {}
+    n = matrix.shape[0]
+    if n == 0:
+        return matrix, matched_rows, extra_reasons
+
+    diag = np.diag(matrix)
+    good_diag = np.isfinite(diag) & (diag > 0.0) & (np.abs(diag - 1.0) <= 0.01)
+    if not bool(np.all(good_diag)):
+        n_bad_diag = int(np.sum(~good_diag))
+        extra_reasons["invalid_panukb_ld_diagonal"] = n_bad_diag
+        keep_idx = np.flatnonzero(good_diag)
+        matched_rows = [matched_rows[int(i)] for i in keep_idx]
+        matrix = np.ascontiguousarray(matrix[np.ix_(keep_idx, keep_idx)])
+
+    if matrix.shape[0] == 0:
+        return matrix, matched_rows, extra_reasons
+
+    # Check in 512-row tiles whether any off-diagonal NaNs remain (e.g. unstored block corner near 10 Mb)
+    step = 512
+    m = matrix.shape[0]
+    bad_counts = np.zeros(m, dtype=np.int64)
+    for i in range(0, m, step):
+        ie = min(m, i + step)
+        bad_tile = ~np.isfinite(matrix[i:ie, :])
+        if bool(np.any(bad_tile)):
+            bad_counts[i:ie] += np.sum(bad_tile, axis=1)
+    if int(np.sum(bad_counts)) > 0:
+        lead_i = max(range(len(matched_rows)), key=lambda idx: (matched_rows[idx]["LP"], -matched_rows[idx]["GWAS_POS"]))
+        anchor_ld_pos = int(matched_rows[lead_i]["LD_POS"])
+        active = np.ones(m, dtype=bool)
+        dropped_nan = 0
+        while True:
+            rem_idx = np.flatnonzero(active)
+            if rem_idx.size == 0:
+                break
+            # Recompute NaN counts among remaining active indices
+            sub_bad = np.zeros(rem_idx.size, dtype=np.int64)
+            for s in range(0, rem_idx.size, step):
+                se = min(rem_idx.size, s + step)
+                sub_tile = ~np.isfinite(matrix[np.ix_(rem_idx[s:se], rem_idx)])
+                if bool(np.any(sub_tile)):
+                    sub_bad[s:se] = np.sum(sub_tile, axis=1)
+            if int(np.max(sub_bad)) == 0:
+                break
+            worst_max = int(np.max(sub_bad))
+            cands = rem_idx[sub_bad == worst_max]
+            drop_k = max(int(k) for k in cands) if cands.size == 1 else max(
+                (int(k) for k in cands),
+                key=lambda k: (abs(int(matched_rows[k]["LD_POS"]) - anchor_ld_pos), -float(matched_rows[k]["LP"])),
+            )
+            active[drop_k] = False
+            dropped_nan += 1
+        extra_reasons["missing_panukb_ld_block"] = dropped_nan
+        keep_idx2 = np.flatnonzero(active)
+        matched_rows = [matched_rows[int(i)] for i in keep_idx2]
+        matrix = np.ascontiguousarray(matrix[np.ix_(keep_idx2, keep_idx2)])
+
+    return matrix, matched_rows, extra_reasons
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -552,7 +619,7 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
         return qc_skip
 
     normalized, band_excluded, unclamped_grch37_span = _clamp_to_grch37_ld_band(
-        normalized, locus, gene=gene, max_span_bp=9_980_000
+        normalized, locus, gene=gene, max_span_bp=9_600_000
     )
 
     target_chrom = chrom
@@ -711,6 +778,31 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
         bm_cache_misses = int(getattr(reader, "disk_misses", 0))
         del reader
         gc.collect()
+        matrix, matched_rows, ld_prune_reasons = _prune_degenerate_panukb_ld_rows(matrix, matched_rows)
+        for rk, rv in ld_prune_reasons.items():
+            reason_counts[rk] = reason_counts.get(rk, 0) + rv
+        if not matched_rows:
+            del matrix
+            gc.collect()
+            qc_skip = {
+                "region_id": region_id,
+                "region_type": region_type,
+                "source_region_grch38": f"{chrom}:{start}-{end}",
+                "target_region_grch37": f"{target_chrom}:{target_start}-{target_end}",
+                "status": "skipped_no_panel_matched_variants",
+                "min_maf": min_maf,
+                "mhc_region": locus["mhc_region"],
+                "mhc_core_grc": locus["mhc_core_grc"],
+                "variants_in_source_region": n_source_records,
+                "variants_removed_min_maf": len(maf_excluded),
+                "variants_after_min_maf": len(records),
+                "variants_lifted": len(normalized),
+                "variants_ld_matched": 0,
+                "exclusion_reasons": reason_counts,
+            }
+            write_json(outdir / "locus_prep_qc.json", qc_skip)
+            return qc_skip
+        lead_idx = max(range(len(matched_rows)), key=lambda idx: (matched_rows[idx]["LP"], -matched_rows[idx]["GWAS_POS"]))
         flip_positions = [i for i, r in enumerate(matched_rows) if r["PANEL_ALLELE_SWAPPED"]]
         matrix = _apply_flips_inplace(matrix, flip_positions)
 

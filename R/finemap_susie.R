@@ -423,7 +423,8 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
     if (will_compute_eigen_r) {
       eig <- eigen(R, symmetric = TRUE)
       eig$values <- eig$values / ld_scale
-      if (min(eig$values) < -1e-8) {
+      psd_tol <- if (nrow(R) <= as.integer(psd_max_variants)) 1e-8 else 1e-5
+      if (min(eig$values) < -psd_tol) {
         stop("LD matrix is not positive semidefinite; no repair was applied.",
              call. = FALSE)
       }

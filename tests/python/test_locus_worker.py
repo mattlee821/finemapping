@@ -790,6 +790,24 @@ class LocusWorkerScratchTests(unittest.TestCase):
         self.assertTrue(all(r["reason"] == "lifted_outside_grch37_10mb_band" for r in excluded))
         self.assertLessEqual(max(r["LD_POS"] for r in kept) - min(r["LD_POS"] for r in kept), 9_980_000)
 
+        # Also verify _prune_degenerate_panukb_ld_rows removes zero-diagonal & edge-NaN variants cleanly
+        import numpy as np
+        mat = np.eye(5, dtype=np.float64)
+        mat[1, 1] = 0.0  # covariate-residualized zero-variance variant in Pan-UKB
+        mat[0, 4] = mat[4, 0] = np.nan  # unstored far-edge BlockMatrix cell
+        rows = [
+            {"ID": "v0_left",  "LD_POS": 100_000,   "GWAS_POS": 100_000,   "LP": 8.0},
+            {"ID": "v1_zero",  "LD_POS": 500_000,   "GWAS_POS": 500_000,   "LP": 6.0},
+            {"ID": "v2_lead",  "LD_POS": 1_000_000, "GWAS_POS": 1_000_000, "LP": 95.0},
+            {"ID": "v3_mid",   "LD_POS": 1_200_000, "GWAS_POS": 1_200_000, "LP": 12.0},
+            {"ID": "v4_right", "LD_POS": 9_950_000, "GWAS_POS": 9_950_000, "LP": 4.0},
+        ]
+        pruned_mat, pruned_rows, reasons = prep_locus._prune_degenerate_panukb_ld_rows(mat, rows)
+        self.assertEqual(reasons, {"invalid_panukb_ld_diagonal": 1, "missing_panukb_ld_block": 1})
+        self.assertEqual([r["ID"] for r in pruned_rows], ["v0_left", "v2_lead", "v3_mid"])
+        self.assertEqual(pruned_mat.shape, (3, 3))
+        self.assertTrue(bool(np.all(np.isfinite(pruned_mat))))
+
 
 if __name__ == "__main__":
     unittest.main()
