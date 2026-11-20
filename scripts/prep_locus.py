@@ -222,6 +222,103 @@ def open_blockmatrix_reader(
     )
 
 
+def _assemble_bounded(reader: Any, global_idxs: list[int], max_workers: int = 4) -> Any:
+    """Assemble symmetric LD submatrix with bounded in-flight blocks (prevents O(blocks) RAM spike on MHC)."""
+    from collections import defaultdict
+    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+    import numpy as np
+    from ldcov.ld_bm.extract import _as_slice
+
+    bs = reader.block_size
+    n = len(global_idxs)
+    out = np.full((n, n), np.nan, dtype=np.float64)
+
+    groups: dict[int, list[tuple[int, int]]] = defaultdict(list)
+    for pos, g in enumerate(global_idxs):
+        groups[g // bs].append((pos, g % bs))
+    block_ids = sorted(groups)
+
+    pairs = [
+        (p, q)
+        for a_i, p in enumerate(block_ids)
+        for q in block_ids[a_i:]
+        if reader.partitioner.part_slot(p, q) is not None
+    ]
+
+    def _scatter(p: int, q: int, block: Any) -> None:
+        a_positions = [pos for pos, _ in groups[p]]
+        a_locals = [loc for _, loc in groups[p]]
+        b_positions = [pos for pos, _ in groups[q]]
+        b_locals = [loc for _, loc in groups[q]]
+        a_ps, a_ls = _as_slice(a_positions), _as_slice(a_locals)
+        b_ps, b_ls = _as_slice(b_positions), _as_slice(b_locals)
+        if a_ps and a_ls and b_ps and b_ls:
+            src = block[a_ls, b_ls]
+            if p == q:
+                dst = out[a_ps, b_ps]
+                np.add(src, src.T, out=dst)
+                np.fill_diagonal(dst, np.diagonal(src))
+            else:
+                out[a_ps, b_ps] = src
+                out[b_ps, a_ps] = src.T
+            return
+        sub = block[np.ix_(a_locals, b_locals)]
+        if p == q:
+            res = sub + sub.T
+            np.fill_diagonal(res, np.diagonal(sub))
+            out[np.ix_(a_positions, b_positions)] = res
+        else:
+            out[np.ix_(a_positions, b_positions)] = sub
+            out[np.ix_(b_positions, a_positions)] = sub.T
+
+    if len(pairs) <= 1 or max_workers <= 1:
+        for p, q in pairs:
+            blk = reader.read_block(p, q)
+            if blk is not None:
+                _scatter(p, q, blk)
+            del blk
+        return out
+
+    workers = min(len(pairs), max_workers)
+    max_inflight = max(2, workers * 2)
+    pair_iter = iter(pairs)
+    inflight: dict[Any, tuple[int, int]] = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for _ in range(min(max_inflight, len(pairs))):
+            p, q = next(pair_iter)
+            inflight[pool.submit(reader.read_block, p, q)] = (p, q)
+        while inflight:
+            done, _ = wait(inflight, return_when=FIRST_COMPLETED)
+            for fut in done:
+                p, q = inflight.pop(fut)
+                blk = fut.result()
+                if blk is not None:
+                    _scatter(p, q, blk)
+                del blk
+                nxt = next(pair_iter, None)
+                if nxt is not None:
+                    inflight[pool.submit(reader.read_block, nxt[0], nxt[1])] = nxt
+    return out
+
+
+def _apply_flips_inplace(matrix: Any, flip_positions: list[int]) -> Any:
+    """Negate rows/cols for swapped-allele variants in-place in 512-row tiles (0 extra O(M^2) allocations)."""
+    if not flip_positions:
+        return matrix
+    import numpy as np
+
+    n = matrix.shape[0]
+    signs = np.ones(n, dtype=np.float64)
+    signs[np.asarray(flip_positions, dtype=np.intp)] = -1.0
+    step = 512
+    for i in range(0, n, step):
+        ie = min(n, i + step)
+        tile = matrix[i:ie, :]
+        tile *= signs[i:ie, None]
+        tile *= signs[None, :]
+    return matrix
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     no_cli = (argv is None and len(sys.argv) == 1)
     default_bm = (
@@ -464,8 +561,6 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
             Path(f"{ld_prefix}.npz").unlink(missing_ok=True)
             Path(f"{ld_prefix}.variants.tsv").unlink(missing_ok=True)
     else:
-        from ldcov.ld_bm.extract import _apply_flips, _assemble
-
         bm_uri = (
             args.bm_path
             if args.bm_path
@@ -474,15 +569,16 @@ def prep_locus(args: argparse.Namespace) -> dict[str, Any]:
         global_idxs = [int(r["PANEL_IDX"]) for r in matched_rows]
         reader = open_blockmatrix_reader(
             bm_uri,
-            block_cache=args.block_cache,
+            block_cache=min(int(args.block_cache), 2),
             disk_cache_root=args.bm_disk_cache,
         )
-        matrix = _assemble(reader, global_idxs, max_workers=args.fetch_workers)
+        matrix = _assemble_bounded(reader, global_idxs, max_workers=args.fetch_workers)
         bm_cache_hits = int(getattr(reader, "disk_hits", 0))
         bm_cache_misses = int(getattr(reader, "disk_misses", 0))
         del reader
+        gc.collect()
         flip_positions = [i for i, r in enumerate(matched_rows) if r["PANEL_ALLELE_SWAPPED"]]
-        matrix = _apply_flips(matrix, flip_positions)
+        matrix = _apply_flips_inplace(matrix, flip_positions)
 
         ids = [
             f"{normalize_chromosome(str(r['LD_CHROM']))}:{int(r['LD_POS'])}:{r['LD_REF']}:{r['LD_ALT']}"

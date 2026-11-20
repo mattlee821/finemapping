@@ -562,6 +562,43 @@ class LocusWorkerScratchTests(unittest.TestCase):
         cand_strs = [str(p) for p in locus_worker.candidate_node_tmp_roots()]
         self.assertNotIn("/dev/shm", cand_strs)
 
+    def test_bounded_assemble_and_inplace_flips_match_ldcov_reference(self) -> None:
+        import numpy as np
+        import prep_locus
+        from ldcov.io.blockmatrix.partitioner import GridPartitioner
+        from ldcov.ld_bm.extract import _apply_flips, _assemble
+
+        rng = np.random.default_rng(123)
+        full = rng.normal(size=(16, 16))
+        full = np.corrcoef(full)
+        bs = 4
+        blocks: dict[tuple[int, int], np.ndarray] = {}
+        filtered: list[int] = []
+        n_grid = 16 // bs
+        for i in range(n_grid):
+            for j in range(i, n_grid):
+                blk = full[i * bs:(i + 1) * bs, j * bs:(j + 1) * bs].copy()
+                if i == j:
+                    blk = np.triu(blk)
+                blocks[(i, j)] = blk
+                filtered.append(i + j * n_grid)
+
+        class FakeBMReader:
+            block_size = bs
+            partitioner = GridPartitioner(bs, 16, 16, sorted(filtered))
+
+            def read_block(self, i: int, j: int) -> np.ndarray:
+                return blocks[(i, j)].copy()
+
+        for idxs in ([0, 1, 2, 3, 4, 5, 8, 9, 12, 15], list(range(16))):
+            ref = _assemble(FakeBMReader(), idxs, max_workers=3)
+            got = prep_locus._assemble_bounded(FakeBMReader(), idxs, max_workers=3)
+            np.testing.assert_allclose(got, ref, rtol=0, atol=1e-15)
+            flips = [0, 3, 5, len(idxs) - 1]
+            ref_f = _apply_flips(ref.copy(), flips)
+            got_f = prep_locus._apply_flips_inplace(got.copy(), flips)
+            np.testing.assert_allclose(got_f, ref_f, rtol=0, atol=1e-15)
+
 
 if __name__ == "__main__":
     unittest.main()

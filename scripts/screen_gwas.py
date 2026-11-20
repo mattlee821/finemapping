@@ -79,7 +79,7 @@ def estimate_locus_memory_gb(
     raw_gib = 3.2 * matrix_gib + 6.0
 
     if region_type == "mhc" and est_m >= 35_000:
-        raw_gib = max(raw_gib, 96.0)
+        raw_gib = max(raw_gib, 128.0)
     elif int(width_bp) >= 7_000_000 and est_m >= 35_000:
         raw_gib = max(raw_gib, 64.0)
 
