@@ -431,6 +431,8 @@ if [[ "$DRY_RUN" != "true" && -f "${LOG_ROOT}/run_manifest.tsv" ]]; then
 fi
 
 if [[ "$RESUME" -eq 0 && "$KEEP_INTERMEDIATES" != "true" ]]; then
+  # Note: ${SCRATCH_ROOT}/by_gwas/<study>__<gwas>__<hash> is cleaned per-GWAS on completion
+  # by finalise_gwas.py so unfinished GWAS keep already-completed loci across runs.
   rm -rf "${SCRATCH_ROOT}/${RUN_ID}" 2>/dev/null || true
   if [[ -n "$TEMP_ROOT" && -n "$RUN_TMP_DIR" ]]; then
     rm -rf "${RUN_TMP_DIR}" 2>/dev/null || true

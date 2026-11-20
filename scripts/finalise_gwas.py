@@ -183,8 +183,12 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
         )
     ]
     if failed_loci:
-        if args.cleanup_loci_scratch and not args.keep_intermediates and loci_root and loci_root.is_dir():
-            shutil.rmtree(loci_root, ignore_errors=True)
+        # Remove only failed locus folders so already-completed sibling loci in `loci_root` are reused on retry!
+        if not args.keep_intermediates and loci_root and loci_root.is_dir():
+            for bad in failed_loci:
+                bad_rid = bad.get("region_id")
+                if bad_rid:
+                    shutil.rmtree(loci_root / bad_rid, ignore_errors=True)
         bad_desc = ", ".join(
             f"{r['region_id']} ({r.get('error') or r.get('status')})" for r in failed_loci[:5]
         )
@@ -212,9 +216,11 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
         "wall_seconds": agg_seconds,
     })
 
-    # Clean up multi-GB locus scratch immediately when requested
+    # Clean up per-GWAS locus scratch immediately once all loci have been aggregated
     if args.cleanup_loci_scratch and not args.keep_intermediates and loci_root and loci_root.is_dir():
         shutil.rmtree(loci_root, ignore_errors=True)
+        if loci_root.parent.parent.name == "by_gwas":
+            shutil.rmtree(loci_root.parent, ignore_errors=True)
 
     n_analyzed = sum(1 for r in analyzed_loci if r.get("status") == "analyzed")
     total_cs_rss = sum(

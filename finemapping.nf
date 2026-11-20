@@ -161,9 +161,7 @@ process FINEMAP_LOCUS {
     tuple val(row_id), path(row_json), path(screen_json), val(n_loci), env('SCRATCH_LOCI_ROOT')
 
     script:
-    def run_scratch_id = params.log_root ? new File(params.log_root as String).name : workflow.sessionId.toString()
     def scratch_root = params.scratch_dir ?: "${params.cache_dir}/scratch"
-    def scratch_base = "${scratch_root}/${run_scratch_id}/${row_id}/loci"
     """
     python3 '${projectDir}/scripts/locus_worker.py' \\
       --project-dir '${projectDir}' \\
@@ -172,7 +170,7 @@ process FINEMAP_LOCUS {
       --locus-index '${locus_index}' \\
       --region-id '${region_id}' \\
       --region-type '${region_type}' \\
-      --scratch-base '${scratch_base}' \\
+      --scratch-root '${scratch_root}' \\
       --temp-dir '${params.temp_dir ?: ""}' \\
       --bm-disk-cache '${params.bm_cache_dir ?: ""}' \\
       --attempt '${task.attempt}' \\

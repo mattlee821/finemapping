@@ -563,9 +563,10 @@ def cmd_prepare(args: argparse.Namespace) -> int:
             if not args.dry_run:
                 row_log_dir = outdir / row["study_id"] / row["gwas_id"] / "logs"
                 if row_log_dir.is_dir():
+                    stale_prefixes = ("01_", "02_", "03_", "04_") if args.force else ("01_", "04_")
                     for stale in row_log_dir.iterdir():
                         if stale.is_file() and (
-                            stale.name.startswith(("01_", "02_", "03_", "04_"))
+                            stale.name.startswith(stale_prefixes)
                             or stale.name == "trace.tsv"
                         ):
                             stale.unlink()

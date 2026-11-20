@@ -167,7 +167,13 @@ def open_blockmatrix_reader(
             try:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 tmp = dst.parent / f".{dst.name}.tmp.{os.getpid()}.{threading.get_ident()}"
-                tmp.write_bytes(payload)
+                with open(tmp, "wb") as fh:
+                    fh.write(payload)
+                    fh.flush()
+                    try:
+                        os.fsync(fh.fileno())
+                    except OSError:
+                        pass
                 os.replace(tmp, dst)
             except OSError:
                 pass

@@ -256,6 +256,167 @@ class LocusWorkerScratchTests(unittest.TestCase):
                 self.assertEqual(fetch_counts, {"meta": 1, "part": 1})
                 np.testing.assert_allclose(b2, np.eye(4))
 
+    def test_per_locus_scratch_keying_completeness_skip_and_migration(self) -> None:
+        import json
+        import tempfile
+
+        methods = ["p_ld", "susie_rss", "susie_rrss", "carma", "polyfun"]
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            scratch_root = base / "scratch"
+            outdir = base / "finemapping"
+            rows_dir = base / "rows"
+            old_run_scratch = scratch_root / "1005978"
+            rows_dir.mkdir(parents=True)
+
+            row = {
+                "study_id": "sun_2023_37794186",
+                "gwas_id": "P00749_OID21124",
+                "settings_hash": "a1b2c3d4e5f6",
+                "outdir": str(outdir),
+                "methods": methods,
+                "force": False,
+                "keep_intermediates": False,
+            }
+            row_json = rows_dir / "row_00027_sun_2023_37794186__P00749_OID21124.json"
+            row_json.write_text(json.dumps(row), encoding="utf-8")
+
+            screen_json = base / "screen_summary.json"
+            screen_json.write_text(
+                json.dumps({
+                    "reference_sample_size": 420542,
+                    "selected_regions": [{"region_id": "chr9_1_100", "vcf_variants_in_region": 22000}],
+                }),
+                encoding="utf-8",
+            )
+
+            # Populate 1 complete locus + 1 incomplete locus in legacy run scratch
+            old_loci = old_run_scratch / row_json.stem / "loci"
+            good_loc = old_loci / "chr9_1_100"
+            good_loc.mkdir(parents=True)
+            (good_loc / "locus_prep_qc.json").write_text(json.dumps({"status": "prepared"}), encoding="utf-8")
+            for m in methods:
+                md = good_loc / "methods" / m
+                md.mkdir(parents=True)
+                (md / "region_result.rds").write_bytes(b"RDSDATA")
+                (md / "method_qc.json").write_text(json.dumps({"method_id": m}), encoding="utf-8")
+
+            bad_loc = old_loci / "chr6_25500000_34000000_mhc"
+            bad_loc.mkdir(parents=True)
+            (bad_loc / "locus_prep_qc.json").write_text(json.dumps({"status": "prepared"}), encoding="utf-8")
+            # Only 2 of 5 methods present -> incomplete!
+            for m in ("p_ld", "carma"):
+                md = bad_loc / "methods" / m
+                md.mkdir(parents=True)
+                (md / "region_result.rds").write_bytes(b"RDSDATA")
+                (md / "method_qc.json").write_text(json.dumps({"method_id": m}), encoding="utf-8")
+
+            self.assertTrue(locus_worker.locus_outputs_are_complete(good_loc, methods))
+            self.assertFalse(locus_worker.locus_outputs_are_complete(bad_loc, methods))
+
+            stats = locus_worker.migrate_run_scratch(old_run_scratch, rows_dir, scratch_root)
+            self.assertEqual(stats, {"migrated_loci": 1, "gwas_with_migrated_loci": 1})
+
+            dst_loci = locus_worker.gwas_scratch_loci_dir(scratch_root, row)
+            self.assertTrue(locus_worker.locus_outputs_are_complete(dst_loci / "chr9_1_100", methods))
+            self.assertFalse((dst_loci / "chr6_25500000_34000000_mhc").exists())
+
+            # Invoking run_locus_worker on the migrated complete locus skips subprocess execution completely
+            out_root_file = base / ".scratch_loci_root"
+            args = locus_worker.parse_args([
+                "--project-dir", str(SCRIPTS_DIR.parent),
+                "--row-json", str(row_json),
+                "--screen-json", str(screen_json),
+                "--locus-index", "0",
+                "--region-id", "chr9_1_100",
+                "--region-type", "lead_locus",
+                "--scratch-root", str(scratch_root),
+                "--out-root-file", str(out_root_file),
+            ])
+            with mock.patch("locus_worker._run_and_log") as m_run:
+                rc = locus_worker.run_locus_worker(args)
+                self.assertEqual(rc, 0)
+                m_run.assert_not_called()
+            self.assertEqual(out_root_file.read_text(encoding="utf-8"), str(dst_loci))
+
+    def test_dynamic_locus_reserve_bytes_and_failed_gwas_preserves_good_loci(self) -> None:
+        import json
+        import tempfile
+        import finalise_gwas
+
+        screen = {
+            "selected_regions": [
+                {"region_id": "chr1_1_10", "vcf_variants_in_region": 3400},
+                {"region_id": "chr9_1_10", "vcf_variants_in_region": 22000},
+                {"region_id": "chr6_25500000_34000000_mhc", "vcf_variants_in_region": 80000},
+            ]
+        }
+        r_sparse = locus_worker.estimate_locus_reserve_bytes(screen, 0, "lead_locus")
+        r_std = locus_worker.estimate_locus_reserve_bytes(screen, 1, "lead_locus")
+        r_mhc = locus_worker.estimate_locus_reserve_bytes(screen, 2, "mhc")
+        self.assertEqual(r_sparse, int(1.5 * (1024 ** 3)))
+        self.assertGreater(r_std, int(4.0 * (1024 ** 3)))
+        self.assertLess(r_std, int(6.0 * (1024 ** 3)))
+        self.assertGreater(r_mhc, int(50.0 * (1024 ** 3)))
+
+        # Verify finalise_gwas removes ONLY failed locus directory while preserving completed sibling loci
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            loci_root = base / "scratch" / "by_gwas" / "s__g__h" / "loci"
+            good_loc = loci_root / "chr1_1_10"
+            (good_loc / "methods" / "p_ld").mkdir(parents=True)
+            (good_loc / "locus_prep_qc.json").write_text(
+                json.dumps({"region_id": "chr1_1_10", "region_type": "lead_locus", "status": "prepared"}),
+                encoding="utf-8",
+            )
+            (good_loc / "methods" / "p_ld" / "region_result.rds").write_bytes(b"RDS")
+            (good_loc / "methods" / "p_ld" / "method_qc.json").write_text(
+                json.dumps({"method_id": "p_ld"}), encoding="utf-8"
+            )
+            bad_loc = loci_root / "chr6_25500000_34000000_mhc"
+            bad_loc.mkdir(parents=True)
+            (bad_loc / "locus_prep_qc.json").write_text(
+                json.dumps({
+                    "region_id": "chr6_25500000_34000000_mhc",
+                    "region_type": "mhc",
+                    "status": "failed_locus",
+                    "error": "OOM",
+                }),
+                encoding="utf-8",
+            )
+            screen_file = base / "screen_summary.json"
+            screen_file.write_text(
+                json.dumps({
+                    "study_id": "s",
+                    "gwas_id": "g",
+                    "population": "EUR",
+                    "ancestry_ld_status": "matched",
+                    "reference_sample_size": 420542,
+                    "significance_lp": 7.3,
+                    "region_flank_bp": 1500000,
+                    "genomewide_significant_variants": 10,
+                    "candidate_regions_total": 2,
+                    "selected_regions_count": 2,
+                    "selected_regions": [
+                        {"region_id": "chr1_1_10", "region_type": "lead_locus"},
+                        {"region_id": "chr6_25500000_34000000_mhc", "region_type": "mhc"},
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            f_args = finalise_gwas.parse_args([
+                "--screen-json", str(screen_file),
+                "--loci-dir", str(loci_root),
+                "--output-root", str(base / "out"),
+                "--methods", "p_ld",
+                "--cleanup-loci-scratch",
+                "--force",
+            ])
+            with self.assertRaises(RuntimeError):
+                finalise_gwas.finalise_gwas(f_args)
+            self.assertTrue(good_loc.is_dir())
+            self.assertFalse(bad_loc.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
