@@ -392,7 +392,9 @@ carma_shotgun_module <- function(z, R, ld_scale = 1, lambda = 1,
         for (i_set in active_sets) {
           cand_mat <- sets[[i_set]]
           cand_mar <- margins[[i_set]]
-          while (nrow(cand_mat) > 0L) {
+          n_out_checks <- 0L
+          max_out_checks <- 32L
+          while (nrow(cand_mat) > 0L && n_out_checks < max_out_checks && any(is.finite(cand_mar))) {
             pick_i <- sample_softmax(cand_mar - current_log_margin)
             test_S <- as.integer(cand_mat[pick_i, ])
             if (outlier_switch && length(test_S) > 1L) {
@@ -410,8 +412,8 @@ carma_shotgun_module <- function(z, R, ld_scale = 1, lambda = 1,
                         outlier_fn(seq_kt, opt_ld, z_sub, outlier_tau, k_t, 1)
               test_log_bf <- -abs(raw_bf)
               if (is.finite(test_log_bf) && exp(test_log_bf) < outlier_bf_index) {
-                cand_mat <- cand_mat[-pick_i, , drop = FALSE]
-                cand_mar <- cand_mar[-pick_i]
+                cand_mar[[pick_i]] <- -Inf
+                n_out_checks <- n_out_checks + 1L
                 new_out <- test_S[is.na(match(test_S, working_S))]
                 conditional_S <- unique(c(conditional_S, new_out))
                 next
