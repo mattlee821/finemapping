@@ -318,6 +318,12 @@ fit_susie_from_prescaled_xtx <- function(z, XtX, n, L, coverage, max_iter,
     ss$params$R_sensitivity_threshold <- 30
   }
 
+  # XtX and z_clean are already verified 100% finite; bypass R's single-threaded O(M^2)
+  # ISNAN pre-scan on every `XtX %*% v` so multi-threaded BLAS dgemv scales cleanly on MHC.
+  if (all(is.finite(z_clean))) {
+    old_matprod <- options(matprod = "blas")
+    on.exit(options(old_matprod), add = TRUE)
+  }
   model <- workhorse(ss$data, ss$params)
   if (!is.null(model$R_finite_diagnostics)) {
     model$R_finite_diagnostics$SER_fallback <-
@@ -491,26 +497,49 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
   max_lbf_val <- if (length(lbf_vec) > 0L && any(is.finite(lbf_vec))) max(lbf_vec, na.rm = TRUE) else NA_real_
 
   # Two-tier credible-set validity gate:
-  # Suppress primary credible sets (and clear fit$sets$cs so coloc::coloc.susie skips them)
-  # if IBSS failed to converge OR any active CS slot blew up to V > 1.0 on standardized z-stats.
+  #   Tier 1: If IBSS failed to converge (!is_converged), suppress ALL credible sets at the locus.
+  #   Tier 2: If IBSS converged, filter credible sets per-slot to prior variance V[l] <= 1.0
+  #           (dropping only collinear opposite-sign blow-up slots while preserving valid CSs
+  #           such as the primary cis-pQTL lead in fit$sets$cs and fit$sets$cs_index for coloc.susie).
   implausible_v_flag <- is.finite(max_V_cs) && (max_V_cs > 1.0)
-  suppress_cs <- (!is_converged) || implausible_v_flag
-  suppress_reason <- if (!is_converged && implausible_v_flag) {
-    "non_converged_and_implausible_prior_variance"
-  } else if (!is_converged) {
-    "non_converged"
-  } else if (implausible_v_flag) {
-    "implausible_prior_variance_gt_1"
-  } else {
-    NA_character_
-  }
-  dropped_cs_count <- if (suppress_cs) as.integer(raw_cs_count) else 0L
-  if (suppress_cs) {
+  dropped_implausible_v_cs <- 0L
+  if (!is_converged) {
+    dropped_cs_count <- as.integer(raw_cs_count)
+    suppress_cs <- TRUE
+    suppress_reason <- if (implausible_v_flag) {
+      "non_converged_and_implausible_prior_variance"
+    } else {
+      "non_converged"
+    }
     cs <- list(
       cs = NULL,
       coverage = NULL,
       requested_coverage = coverage
     )
+  } else if (raw_cs_count > 0L && implausible_v_flag) {
+    cs_v <- if (length(V_vec) >= max(active_idx)) V_vec[active_idx] else rep(NA_real_, length(active_idx))
+    keep_v <- which(is.na(cs_v) | (is.finite(cs_v) & cs_v <= 1.0))
+    dropped_implausible_v_cs <- as.integer(raw_cs_count - length(keep_v))
+    dropped_cs_count <- dropped_implausible_v_cs
+    suppress_cs <- dropped_cs_count > 0L
+    if (length(keep_v) == 0L) {
+      suppress_reason <- "all_cs_implausible_prior_variance_gt_1"
+      cs <- list(
+        cs = NULL,
+        coverage = NULL,
+        requested_coverage = coverage
+      )
+    } else {
+      suppress_reason <- "partial_cs_dropped_prior_variance_gt_1"
+      cs$cs <- cs$cs[keep_v]
+      cs$purity <- cs$purity[keep_v, , drop = FALSE]
+      cs$cs_index <- cs$cs_index[keep_v]
+      cs$coverage <- cs$coverage[keep_v]
+    }
+  } else {
+    dropped_cs_count <- 0L
+    suppress_cs <- FALSE
+    suppress_reason <- NA_character_
   }
 
   fit$sets <- cs
@@ -600,6 +629,7 @@ run_susie_model <- function(variants, R, method_id, effective_n = NULL,
     credible_sets_suppressed = suppress_cs,
     credible_sets_suppressed_reason = suppress_reason,
     unconverged_cs_dropped = dropped_cs_count,
+    dropped_implausible_v_cs = dropped_implausible_v_cs,
     psd_check = psd_status,
     q_art_eigen = q_art_eigen_status,
     r_mismatch_requested = r_mismatch_requested,

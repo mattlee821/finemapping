@@ -150,11 +150,23 @@ process FINEMAP_LOCUS {
     tag "${row_id}:${region_id}"
     label 'method_heavy'
     cache false
+    cpus {
+        def base = (mem_gb ?: 16) as Integer
+        if (region_type == 'mhc' || base >= 128) return 16
+        if (base >= 48) return 8
+        return 4
+    }
     memory {
         def base = (mem_gb ?: 16) as Integer
+        if (region_type == 'mhc' && base >= 32) base = Math.max(base, 160)
         def mult = task.attempt == 1 ? 1.0 : (task.attempt == 2 ? 1.75 : 2.5)
         def req = Math.min(350, Math.max(base, Math.ceil(base * mult) as Integer))
         "${req} GB"
+    }
+    time {
+        def base = (mem_gb ?: 16) as Integer
+        def base_hrs = (region_type == 'mhc' || base >= 128) ? 24 : (base >= 48 ? 16 : 8)
+        "${Math.min(48, base_hrs * task.attempt)}h"
     }
     afterScript { "if [ -s .command.err ]; then python3 '${projectDir}/scripts/prepare_manifest.py' copy-logs --outdir '${params.outdir}' --row-json '${row_json}' --step-name '02_locus_worker_${region_id}' || true; fi" }
 
@@ -177,6 +189,7 @@ process FINEMAP_LOCUS {
       --scratch-root '${scratch_root}' \\
       --temp-dir '${params.temp_dir ?: ""}' \\
       --bm-disk-cache '${params.bm_cache_dir ?: ""}' \\
+      --threads '${task.cpus}' \\
       --attempt '${task.attempt}' \\
       --max-attempts '${(task.maxRetries ?: 0) + 1}' \\
       --out-root-file .scratch_loci_root

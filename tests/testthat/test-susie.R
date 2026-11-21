@@ -164,26 +164,33 @@ test_that("Two-tier CS validity gate suppresses non-converged and V > 1 blow-up 
   expect_true(all(is.na(nonconv$variants$credible_set_id)))
   expect_null(nonconv$fit$sets$cs)
 
-  # 2. Opposite-sign collinear cancellation blow-up (V > 1 on standardized summary stats)
-  variants_blow <- variants
-  variants_blow$EZ <- c(45, -45, 0.1, 0.0, -0.1, 0.05)
-  variants_blow$SS <- rep(500, 6)
-  R_blow <- diag(6)
-  R_blow[1, 2] <- R_blow[2, 1] <- 0.998
-  dimnames(R_blow) <- list(ids, ids)
+  # 2. Converged locus with 1 valid lead CS (V <= 1) + 1 opposite-sign collinear blow-up slot (V > 1)
+  #    retains the valid CS and drops only the V > 1 CS slot!
+  variants_mix <- variants
+  variants_mix$EZ <- c(45, -45, 0.1, 9.5, 9.1, 0.05)
+  variants_mix$LP <- c(200, 200, 0.3, 20.0, 19.0, 0.2)
+  variants_mix$SS <- rep(500, 6)
+  R_mix <- diag(6)
+  R_mix[1, 2] <- R_mix[2, 1] <- 0.998
+  R_mix[4, 5] <- R_mix[5, 4] <- 0.95
+  dimnames(R_mix) <- list(ids, ids)
 
-  blow <- suppressWarnings(run_susie_rss(
-    variants_blow,
-    R_blow,
+  mix <- suppressWarnings(run_susie_rss(
+    variants_mix,
+    R_mix,
     L = 4,
-    max_iter = 100L,
+    max_iter = 200L,
     min_abs_corr = 0.5
   ))
-  if (is.finite(blow$diagnostics$max_cs_prior_variance_V) &&
-      blow$diagnostics$max_cs_prior_variance_V > 1.0) {
-    expect_true(blow$diagnostics$implausible_prior_variance_flag)
-    expect_true(blow$diagnostics$credible_sets_suppressed)
-    expect_equal(nrow(blow$credible_sets), 0L)
-    expect_null(blow$fit$sets$cs)
+  if (isTRUE(mix$diagnostics$converged) &&
+      isTRUE(mix$diagnostics$implausible_prior_variance_flag)) {
+    expect_true(all(mix$credible_sets$prior_variance_V <= 1.0))
+    expect_gte(nrow(mix$credible_sets), 1L)
+    expect_gte(mix$diagnostics$dropped_implausible_v_cs, 1L)
+    expect_equal(length(mix$fit$sets$cs), nrow(mix$credible_sets))
+    expect_equal(length(mix$fit$sets$cs_index), nrow(mix$credible_sets))
+  } else if (!isTRUE(mix$diagnostics$converged)) {
+    expect_equal(nrow(mix$credible_sets), 0L)
+    expect_null(mix$fit$sets$cs)
   }
 })

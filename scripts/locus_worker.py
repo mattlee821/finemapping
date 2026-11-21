@@ -492,11 +492,22 @@ def _build_prep_cmd(
     return cmd
 
 
-def _make_sub_env(work_loc_dir: Path) -> dict[str, str]:
+def _make_sub_env(work_loc_dir: Path, threads: int = 0) -> dict[str, str]:
     work_tmp_dir = work_loc_dir / "tmp"
     work_tmp_dir.mkdir(parents=True, exist_ok=True)
     sub_env = dict(os.environ)
     sub_env["TMPDIR"] = str(work_tmp_dir)
+    n_threads = int(threads or 0)
+    if n_threads <= 0:
+        try:
+            n_threads = int(os.environ.get("SLURM_CPUS_PER_TASK") or 0)
+        except ValueError:
+            n_threads = 0
+    if n_threads > 0:
+        t_str = str(n_threads)
+        sub_env["OPENBLAS_NUM_THREADS"] = t_str
+        sub_env["OMP_NUM_THREADS"] = t_str
+        sub_env["MKL_NUM_THREADS"] = t_str
     return sub_env
 
 
@@ -628,7 +639,7 @@ def run_locus_worker(args: argparse.Namespace) -> int:
         claim = allocate_locus_workdir(safe_reg, spill_target, reserve_bytes=reserve_b)
 
     try:
-        sub_env = _make_sub_env(claim.work_dir)
+        sub_env = _make_sub_env(claim.work_dir, threads=int(args.threads or 0))
         prep_cmd = _build_prep_cmd(proj, row, args.screen_json, loc_idx, claim.work_dir, keep_inter, bm_disk_cache)
         try:
             _run_and_log(prep_cmd, f"02_prep_{safe_reg}", gwas_log_dir, sub_env)
@@ -643,7 +654,7 @@ def run_locus_worker(args: argparse.Namespace) -> int:
                     spill_target,
                     tmp_candidates=[],
                 )
-                sub_env = _make_sub_env(claim.work_dir)
+                sub_env = _make_sub_env(claim.work_dir, threads=int(args.threads or 0))
                 prep_cmd = _build_prep_cmd(
                     proj, row, args.screen_json, loc_idx, claim.work_dir, keep_inter, bm_disk_cache
                 )
@@ -759,6 +770,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--scratch-base", default="")
     p.add_argument("--temp-dir", default="")
     p.add_argument("--bm-disk-cache", default="")
+    p.add_argument("--threads", type=int, default=0)
     p.add_argument("--attempt", type=int, default=1)
     p.add_argument("--max-attempts", type=int, default=1)
     p.add_argument("--out-root-file", default=".scratch_loci_root")
