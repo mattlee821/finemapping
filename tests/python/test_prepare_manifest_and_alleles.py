@@ -112,6 +112,28 @@ class PrepareManifestTests(unittest.TestCase):
         _, errs_ok = pm.preflight_row(raw, ld_population="EUR", allow_ancestry_mismatch=True)
         self.assertEqual(errs_ok, [])
 
+    def test_ancestry_split_study_dir_mirrors_verbatim_over_stale_metadata_study_id(self):
+        d_sun_eur = self.tmp / "sun_2023_37794186_EUR" / "standardise" / "P39900_OID21439"
+        vcf_p = d_sun_eur / "P39900_OID21439.gwas.vcf.gz"
+        self._make_mini_vcf(vcf_p)
+        (d_sun_eur / "P39900_OID21439.metadata.json").write_text(json.dumps({
+            "study_id": "sun_2023_37794186",
+            "output_id": "P39900_OID21439",
+            "ancestry": "EUR",
+            "coordinate_build": "GRCh38",
+        }), encoding="utf-8")
+
+        # Both --input-dir discovery and direct --vcf preflight mirror sun_2023_37794186_EUR verbatim
+        disc = pm.discover_input_dir(self.tmp)
+        sun_rows = [r for r in disc if r["gwas_id"] == "P39900_OID21439"]
+        self.assertEqual(len(sun_rows), 1)
+        self.assertEqual(sun_rows[0]["study_id"], "sun_2023_37794186_EUR")
+
+        checked_vcf, errs = pm.preflight_row({"vcf": str(vcf_p)}, ld_population="EUR", allow_ancestry_mismatch=False)
+        self.assertEqual(errs, [])
+        self.assertEqual(checked_vcf["study_id"], "sun_2023_37794186_EUR")
+        self.assertEqual(checked_vcf["row_key"], "sun_2023_37794186_EUR/P39900_OID21439")
+
 
 class SwappedAlleleAndIndelTests(unittest.TestCase):
     def setUp(self):

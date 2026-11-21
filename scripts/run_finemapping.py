@@ -1930,8 +1930,13 @@ def load_or_init_sidecars(
             raise FileNotFoundError(f"QC JSON not found: {qp}")
         qc_upstream = json.loads(qp.read_text(encoding="utf-8"))
 
-    study_id = study_id_arg or metadata.get("study_id") or "study"
-    default_gwas_id = re.sub(r"\.vcf(\.gz|\.bgz)?$", "", vcf.name)
+    inferred_dir_study = (
+        vcf.parent.parent.parent.name
+        if vcf.parent.parent.name == "standardise" and vcf.parent.parent.parent.name
+        else None
+    )
+    study_id = study_id_arg or inferred_dir_study or metadata.get("study_id") or "study"
+    default_gwas_id = re.sub(r"\.(gwas\.)?vcf(\.gz|\.bgz)?$", "", vcf.name)
     gwas_id = gwas_id_arg or metadata.get("output_id") or metadata.get("gwas_id") or default_gwas_id
 
     coord_meta = metadata.get("coordinate_build", "GRCh38")
@@ -1939,7 +1944,10 @@ def load_or_init_sidecars(
     if coord_meta != "GRCh38" or coord_qc != "GRCh38":
         raise ValueError("GWASfinemapping requires a GRCh38 GWAS-VCF.")
 
-    metadata.setdefault("study_id", study_id)
+    upstream_study = metadata.get("study_id")
+    if upstream_study and upstream_study != study_id:
+        metadata["upstream_study_id"] = upstream_study
+    metadata["study_id"] = study_id
     metadata.setdefault("output_id", gwas_id)
     metadata.setdefault("coordinate_build", "GRCh38")
     if trait_arg:

@@ -366,8 +366,11 @@ def finalise_gwas(args: argparse.Namespace) -> Path:
         "step_telemetry": step_telemetry,
     }
 
+    upstream_study = metadata.get("study_id")
     metadata_out = {
         **metadata,
+        **({"upstream_study_id": upstream_study} if upstream_study and upstream_study != study_id else {}),
+        "study_id": study_id,
         "finemapping_status": overall_status,
         "ld_population": screen["population"],
         "fine_mapping_methods": methods,

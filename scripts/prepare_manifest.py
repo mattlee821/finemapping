@@ -265,10 +265,16 @@ def preflight_row(
     if errors:
         return None, errors
 
+    inferred_dir_study = (
+        vcf.parent.parent.parent.name
+        if vcf.parent.parent.name == "standardise" and vcf.parent.parent.parent.name
+        else ""
+    )
     study_id = (
         (raw.get("study_id") or "").strip()
+        or inferred_dir_study
         or str(meta.get("study_id") or "").strip()
-        or (vcf.parent.parent.parent.name if vcf.parent.parent.name == "standardise" else "study")
+        or "study"
     )
     default_gwas = (
         vcf.parent.name
